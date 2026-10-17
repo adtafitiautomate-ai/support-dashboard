@@ -11,9 +11,11 @@ import {
   markReadAndTyping,
   recentMessages,
   recordInbound,
+  resolveConversation,
   updateConversation,
   upsertContact,
 } from "@/lib/inbox/service";
+import { notifyDeletionRequest, notifyFailedTransaction } from "@/lib/notify";
 import * as F from "./flows";
 import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { allow, LIMITS } from "@/lib/security";
@@ -151,7 +153,10 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         return F.askLocation(ctx, "delivery", { item: a });
       case "privacy":
         // Deletion requests are handled by a person (identity check, legal holds), then erased from the dashboard.
-        return doHandoff(ctx, { reason: "Customer requested deletion of their data (privacy request)", priority: "high", category: "account" });
+        await doHandoff(ctx, { reason: "Customer requested deletion of their data (privacy request)", priority: "high", category: "account" });
+        return notifyDeletionRequest(ctx.mvno, ctx.conv, ctx.contact);
+      case "ftype":
+        return F.askTxnId(ctx, (a in F.TXN_TYPES ? a : "other") as F.TxnType);
       case "near":
         return findNearest(ctx, a === "store" || a === "agent" ? a : undefined);
     }
@@ -159,7 +164,8 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
 
   // ---------------------------------------------------------- awaited inputs
   if (state.awaiting === "txn" && text && !isEscape(text)) {
-    return finishFailedTxn(ctx, /^(skip|no|sina|sirina)$/i.test(text) ? null : text.slice(0, 80));
+    const type = ((state.data?.txnType as string) in F.TXN_TYPES ? state.data?.txnType : "other") as F.TxnType;
+    return finishFailedTxn(ctx, /^(skip|no|sina|sirina)$/i.test(text) ? null : text.slice(0, 120), type);
   }
   if (state.awaiting === "location") {
     if (msg.location) {
@@ -272,8 +278,13 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     }
     case "report_failed_transaction": {
       const id = String(input.transaction_id ?? "").trim();
-      return id ? finishFailedTxn(ctx, id.slice(0, 80)) : F.startFailedTxn(ctx);
+      const t = String(input.transaction_type ?? "unknown");
+      const type = (t in F.TXN_TYPES ? t : null) as F.TxnType | null;
+      if (id) return finishFailedTxn(ctx, id.slice(0, 120), type ?? "other");
+      return type ? F.askTxnId(ctx, type) : F.startFailedTxn(ctx); // ask what failed, then the ID
     }
+    case "resolve_conversation":
+      return botResolve(ctx, String(input.summary ?? ""), String(input.category ?? "inquiry"));
     case "sim_replacement_help":
       return F.showSimLoss(ctx);
     case "show_promos":
@@ -324,26 +335,41 @@ function findNearest(ctx: F.FlowCtx, kind?: F.OutletKind) {
 }
 
 /** Failed/deducted transaction: hand to the team with a finance checklist as an internal note. */
-async function finishFailedTxn(ctx: F.FlowCtx, txnId: string | null) {
+async function finishFailedTxn(ctx: F.FlowCtx, txnId: string | null, type: F.TxnType = "other") {
+  const label = F.TXN_TYPES[type];
   await F.say(ctx, {
     type: "text",
     text: txnId
-      ? `Thank you 🙏 I've sent transaction *${txnId}* to our finance team to verify. We'll update you here as soon as it's checked.`
-      : "No problem. Our finance team will trace it using your number and the time of the transaction. We'll update you here.",
+      ? `Thank you 🙏 I've raised a ticket for your failed ${label} (*${txnId}*) with our finance team. We'll update you here as soon as it's checked.`
+      : `No problem. I've raised a ticket for your failed ${label}; our finance team will trace it using your number and the time of the transaction. We'll update you here.`,
   });
   await doHandoff(ctx, {
-    reason: `Failed transaction${txnId ? `, ID ${txnId}` : ", no ID given"}`,
+    reason: `Failed ${label}${txnId ? `, ref ${txnId}` : ", no ID given"}`,
     priority: "high",
     category: "payment",
   });
+  await updateConversation(ctx.conv.id, { subject: `Failed ${label}${txnId ? ` · ${txnId.slice(0, 40)}` : ""}` }).catch(() => undefined);
   await addBotNote(
     ctx.conv,
     `🔎 Finance check needed\n` +
-      `Transaction ID: ${txnId ?? "not provided: trace by number +" + ctx.contact.wa_id + " and time"}\n` +
+      `Type: ${label}\n` +
+      `Transaction ID / details: ${txnId ?? "not provided: trace by number +" + ctx.contact.wa_id + " and time"}\n` +
       `1. Verify in the billing/${ctx.mvno.wallet_name} system whether the transaction succeeded.\n` +
       `2. If it succeeded, confirm the value was credited to the customer; if it failed, reverse it.\n` +
       `3. Reply to the customer with the outcome, then resolve this ticket.`,
   );
+  await notifyFailedTransaction(ctx.mvno, ctx.conv, ctx.contact, { type: label, id: txnId });
+}
+
+/** The bot answered a simple inquiry and the customer is done: close the ticket as bot-resolved. */
+async function botResolve(ctx: F.FlowCtx, summary: string, category: string) {
+  if (ctx.conv.status !== "bot") return; // never close chats owned by people
+  await updateConversation(ctx.conv.id, {
+    category: ctx.conv.category ?? category.slice(0, 40),
+    subject: ctx.conv.subject ?? (summary ? summary.slice(0, 80) : "Inquiry answered by bot"),
+    ai_summary: ctx.conv.ai_summary ?? (summary || null),
+  });
+  await resolveConversation(ctx.mvno, ctx.conv, ctx.contact, null, true, "Resolved by bot (inquiry answered)");
 }
 
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);
@@ -388,7 +414,9 @@ function greetingReply(greeting: string, text: string) {
 /** Used when no Claude API key is configured. */
 async function keywordFallback(ctx: F.FlowCtx, text: string) {
   const t = text.toLowerCase();
-  if (/fail|deduct|not received|didn.?t (get|receive)|charged|reverse|refund|wrong number/.test(t)) return F.startFailedTxn(ctx);
+  if (/^(thanks|thank you|thank u|thx|asante|webale|mwebale|ok thanks|that'?s all|bye)\b/.test(t)) return botResolve(ctx, "", "inquiry");
+  if (/fail|deduct|not received|haven.?t received|didn.?t (get|receive|go|reach)|not (credited|reflect)|stuck|pending|charged|reverse|refund|wrong number|sent to the wrong|bill.*(not|fail)|withdraw.*(not|fail)|deposit.*(not|fail)/.test(t))
+    return F.startFailedTxn(ctx);
   if (/stolen|lost (my )?(sim|phone)|replace|sim swap|damaged sim|broken sim/.test(t)) return F.showSimLoss(ctx);
   // "agent" alone usually means a PaxSente agent location, so it is not a handoff trigger.
   if (/(talk to|speak to|human|person|customer care|complain|fraud)/.test(t))

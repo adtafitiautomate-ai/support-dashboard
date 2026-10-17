@@ -36,6 +36,38 @@ export async function eraseContact(contactId: string) {
   return { conversations: ids.length, media };
 }
 
+/**
+ * Bot chats with no activity for 24h are closed as bot-resolved, so reports count them
+ * correctly instead of leaving them open forever. No survey is sent for these.
+ */
+export async function autoCloseIdleBotChats() {
+  const db = supabaseAdmin();
+  const cutoff = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  const { data } = await db.from("conversations").select("id, mvno_id").eq("status", "bot").lt("last_message_at", cutoff).limit(2000);
+  const rows = data ?? [];
+  for (let i = 0; i < rows.length; i += 200) {
+    const batch = rows.slice(i, i + 200);
+    await db
+      .from("conversations")
+      .update({ status: "resolved", resolved_at: new Date().toISOString(), bot_state: {}, category: "inquiry" })
+      .in("id", batch.map((r) => r.id))
+      .eq("status", "bot");
+    await db.from("messages").insert(
+      batch.map((r) => ({
+        conversation_id: r.id,
+        mvno_id: r.mvno_id,
+        direction: "out",
+        sender_type: "system",
+        type: "event",
+        body: "Closed automatically by the bot after 24h without activity",
+        is_internal: true,
+        status: "sent",
+      })),
+    );
+  }
+  return rows.length;
+}
+
 /** Deletes conversations older than each MVNO's retention period, plus their media and orphaned contacts. */
 export async function purgeExpired() {
   const db = supabaseAdmin();

@@ -37,6 +37,8 @@ const LABEL: Record<string, [string, "neutral" | "green" | "amber" | "red" | "bl
   "report.exported": ["Exported report", "blue"],
   "customer.erased": ["Erased customer data", "red"],
   "retention.purged": ["Retention clean-up", "neutral"],
+  "email.smtp_updated": ["Updated email settings", "blue"],
+  "email.test_sent": ["Sent test email", "neutral"],
 };
 
 function summary(e: Entry) {

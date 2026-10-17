@@ -18,6 +18,8 @@ const Fields = z.object({
   bot_persona: z.string().trim().max(2000).optional(),
   sla_first_response_mins: z.number().int().min(1).max(1440).default(5),
   retention_days: z.number().int().min(30).max(3650).optional(),
+  finance_emails: z.array(z.email()).max(20).optional(),
+  alert_emails: z.array(z.email()).max(20).optional(),
   privacy_notice: z.string().trim().max(600).optional().nullable(),
   ussd_codes: z
     .object({ balance: z.string().max(20).optional(), self_service: z.string().max(20).optional(), promos: z.string().max(20).optional() })

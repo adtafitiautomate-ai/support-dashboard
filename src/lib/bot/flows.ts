@@ -260,13 +260,55 @@ export async function showSimLoss(ctx: FlowCtx) {
   });
 }
 
+export const TXN_TYPES = {
+  send_money: "money transfer (sent)",
+  receive_money: "money not received",
+  bill_payment: "bill payment",
+  withdrawal: "cash withdrawal",
+  deposit: "deposit",
+  airtime_or_bundle: "airtime / bundle purchase",
+  other: "transaction",
+} as const;
+export type TxnType = keyof typeof TXN_TYPES;
+
+/** Step 1: which kind of transaction failed (all mobile money operations + top-ups). */
 export async function startFailedTxn(ctx: FlowCtx) {
-  await setState(ctx, { flow: "failed_txn", awaiting: "txn" });
+  const w = ctx.mvno.wallet_name;
+  await setState(ctx, { flow: "failed_txn" });
+  await say(ctx, {
+    type: "list",
+    body: `Sorry about that 😔 Let's get it checked for you.\n\nWhat kind of transaction failed?`,
+    button: "Choose type",
+    sections: [
+      {
+        title: w.slice(0, 24),
+        rows: [
+          { id: "ftype:send_money", title: "Sent money", description: `Sent with ${w} but it didn't arrive` },
+          { id: "ftype:receive_money", title: "Money not received", description: "Someone sent you money" },
+          { id: "ftype:bill_payment", title: "Bill payment", description: "Utility, TV, school fees, merchant" },
+          { id: "ftype:withdrawal", title: "Cash withdrawal", description: "Withdrawal at an agent or ATM" },
+          { id: "ftype:deposit", title: "Deposit", description: "Cash or bank deposit not credited" },
+        ],
+      },
+      {
+        title: "Other",
+        rows: [
+          { id: "ftype:airtime_or_bundle", title: "Airtime or bundle", description: "Paid but not credited" },
+          { id: "ftype:other", title: "Something else", description: "Another failed transaction" },
+        ],
+      },
+    ],
+  });
+}
+
+/** Step 2: ask for the reference. */
+export async function askTxnId(ctx: FlowCtx, type: TxnType) {
+  await setState(ctx, { flow: "failed_txn", awaiting: "txn", data: { txnType: type } });
   await say(ctx, {
     type: "text",
     text:
-      `Sorry about that 😔 Let's get it checked.\n\n` +
-      `Please send the *transaction ID* from your SMS or ${ctx.mvno.wallet_name} statement (e.g. PS81LM2Q), plus the amount if you can.\n\n` +
+      `Got it: *${TXN_TYPES[type]}*.\n\n` +
+      `Please send the *transaction ID* from your SMS or ${ctx.mvno.wallet_name} statement (e.g. PS81LM2Q), plus the amount and the other number involved if you can.\n\n` +
       `No ID? Reply *skip*.`,
   });
 }

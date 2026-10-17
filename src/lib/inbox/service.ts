@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isSimulatedRun, SIMULATOR_TAG } from "./simulation";
+import { notifyWaitingNoAgent } from "@/lib/notify";
 import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/meta";
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
@@ -352,18 +353,27 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
       },
       { senderType: "bot" },
     );
+    // Nobody online to take it: email the MVNO's alert list (no-op if none configured).
+    if (!contact.tags?.includes(SIMULATOR_TAG)) await notifyWaitingNoAgent(mvno, updated, contact, input.reason);
   }
   return updated;
 }
 
-export async function resolveConversation(mvno: Mvno, conv: Conversation, contact: Contact, actorId: string | null, askCsat = true) {
+export async function resolveConversation(
+  mvno: Mvno,
+  conv: Conversation,
+  contact: Contact,
+  actorId: string | null,
+  askCsat = true,
+  note = "Conversation resolved",
+) {
   const updated = await updateConversation(conv.id, {
     status: "resolved",
     resolved_at: new Date().toISOString(),
     unread_count: 0,
     bot_state: askCsat ? { awaiting: "csat" } : {},
   });
-  await logEvent(updated, "Conversation resolved", actorId);
+  await logEvent(updated, note, actorId);
   if (askCsat) {
     await sendMessage(
       mvno,

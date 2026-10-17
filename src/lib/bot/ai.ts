@@ -70,7 +70,8 @@ How to reply:
       ? `\n- USSD codes:${mvno.ussd_codes.balance ? ` check balance ${mvno.ussd_codes.balance};` : ""}${mvno.ussd_codes.self_service ? ` buy airtime/bundles or see your own number ${mvno.ussd_codes.self_service};` : ""}${mvno.ussd_codes.promos ? ` promo bundles ${mvno.ussd_codes.promos};` : ""}`
       : ""
   }
-- Failed or deducted transactions: always call report_failed_transaction (never promise a refund). Lost/stolen/damaged SIM: always call sim_replacement_help (agents cannot replace SIMs).
+- Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost/stolen/damaged SIM: always call sim_replacement_help (agents cannot replace SIMs).
+- When you have fully answered a simple inquiry and the customer says thanks / that's all, call resolve_conversation with a short reply (don't ask "anything else?" again).
 - Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre".
 
 ${kb.inline ? `Knowledge base:\n${formatKb(kb.articles)}` : "Knowledge base: the most relevant articles are provided with each turn below."}`;
@@ -176,11 +177,32 @@ export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "report_failed_transaction",
     description:
-      "Customer says a top-up, bundle, airtime or mobile money transaction failed, or money was deducted without value. Pass the transaction ID if they already gave it, else an empty string (the bot will ask for it). Hands over to finance.",
+      "Raise a finance ticket for ANY failed or stuck transaction: mobile money (sending money, money not received, paying bills/merchants, withdrawals, deposits, reversals, sent to wrong number), or airtime/bundle purchases, or money deducted without value. Pass the type if clear (else 'unknown') and the transaction ID/reference if the customer already gave one (else an empty string); the bot asks for whatever is missing.",
     input_schema: {
       type: "object",
-      properties: { transaction_id: { type: "string" } },
-      required: ["transaction_id"],
+      properties: {
+        transaction_type: {
+          type: "string",
+          enum: ["send_money", "receive_money", "bill_payment", "withdrawal", "deposit", "airtime_or_bundle", "other", "unknown"],
+        },
+        transaction_id: { type: "string" },
+      },
+      required: ["transaction_type", "transaction_id"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "resolve_conversation",
+    description:
+      "Close this chat as resolved by the bot. Use ONLY when you fully answered a simple inquiry (prices, codes, how-to, hours, locations) AND the customer signals they are done (e.g. 'thanks', 'ok', 'that's all', 'webale', 'asante'). Never use for complaints, failed transactions, account problems or anything you handed to an agent. The customer then receives a short satisfaction survey.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "One line: what the customer asked and what you answered" },
+        category: { type: "string", enum: ["inquiry", "bundles", "mobile_money", "network", "sim", "billing", "other"] },
+      },
+      required: ["summary", "category"],
       additionalProperties: false,
     },
     strict: true,

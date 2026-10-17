@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, History, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
+import { Building2, History, Mail, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { patch } from "@/lib/store";
 import type { MemberRole, Mvno } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { api, Avatar, Badge, cx, relTime, useNow } from "./ui";
 import { ActivityLog } from "./admin-activity";
+import { EmailSettings } from "./admin-email";
 import { RenewToken, TokenCountdown, type TokenInfo } from "./admin-token";
 import { displayLogin } from "@/lib/login";
 
@@ -27,7 +28,7 @@ const ROLES: MemberRole[] = ["admin", "supervisor", "agent"];
 const roleTone = { admin: "violet", supervisor: "blue", agent: "neutral" } as const;
 
 export function AdminConsole() {
-  const [tab, setTab] = useState<"mvnos" | "users" | "activity">("mvnos");
+  const [tab, setTab] = useState<"mvnos" | "users" | "email" | "activity">("mvnos");
   const [data, setData] = useState<{ mvnos: AdminMvno[]; users: AdminUser[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<AdminMvno> | null>(null);
@@ -99,6 +100,7 @@ export function AdminConsole() {
           [
             ["mvnos", "MVNOs", Building2, data.mvnos.length],
             ["users", "Users", Users, data.users.length],
+            ["email", "Email", Mail, ""],
             ["activity", "Activity", History, ""],
           ] as const
         ).map(([id, label, Icon, n]) => (
@@ -151,6 +153,7 @@ export function AdminConsole() {
         </div>
       )}
 
+      {tab === "email" && <EmailSettings />}
       {tab === "activity" && <ActivityLog />}
 
       {tab === "users" && (
@@ -378,6 +381,8 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
     greeting: initial.greeting ?? "",
     sla_first_response_mins: initial.sla_first_response_mins ?? 5,
     retention_days: initial.retention_days ?? 730,
+    finance_emails: (initial.finance_emails ?? []).join(", "),
+    alert_emails: (initial.alert_emails ?? []).join(", "),
     privacy_notice: initial.privacy_notice ?? "",
     balance: initial.ussd_codes?.balance ?? "",
     self_service: initial.ussd_codes?.self_service ?? "",
@@ -397,6 +402,8 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
       wallet_ussd: rest.wallet_ussd || null,
       care_line: rest.care_line || null,
       privacy_notice: rest.privacy_notice || null,
+      finance_emails: rest.finance_emails.split(/[,;s]+/).map((s) => s.trim()).filter(Boolean),
+      alert_emails: rest.alert_emails.split(/[,;s]+/).map((s) => s.trim()).filter(Boolean),
       greeting: rest.greeting || undefined,
       ussd_codes: Object.fromEntries(Object.entries({ balance, self_service, promos }).filter(([, v]) => v)),
     };
@@ -455,6 +462,12 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
         </L>
         <L label="Greeting" hint={isNew ? "Leave empty for a default greeting" : undefined}>
           <input className={field} value={f.greeting} onChange={set("greeting")} />
+        </L>
+        <L label="Finance emails" hint="Failed-transaction tickets are emailed here (comma-separated)">
+          <input className={field} value={f.finance_emails} onChange={set("finance_emails")} placeholder="finance@company.com, recon@company.com" />
+        </L>
+        <L label="Alert emails" hint="Customer waiting with no agent online; data deletion requests">
+          <input className={field} value={f.alert_emails} onChange={set("alert_emails")} placeholder="supervisors@company.com" />
         </L>
         <div className="grid grid-cols-[120px_1fr] gap-3">
           <L label="Keep chats (days)" hint="Then deleted automatically">
