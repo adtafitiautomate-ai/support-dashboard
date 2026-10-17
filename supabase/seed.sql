@@ -16,6 +16,10 @@ insert into public.mvnos (
 );
 
 -- ---------------------------------------------------------------- Demo agents
+-- Invite-only accounts: put demo emails on the invite list first (see invite_allowlist migration).
+insert into private.invites (email, expires_at)
+select e, now() + interval '10 minutes' from unnest(array['admin@demo.test', 'sarah@paxtel.test', 'david@paxtel.test', 'grace@paxtel.test']) as e;
+
 do $$
 declare
   u record;
@@ -35,7 +39,7 @@ begin
     ) values (
       '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated', u.email,
       extensions.crypt('Password123!', extensions.gen_salt('bf')), now(),
-      '{"provider":"email","providers":["email"]}', jsonb_build_object('full_name', u.full_name),
+      '{"provider":"email","providers":["email"],"invited":true}', jsonb_build_object('full_name', u.full_name),
       now(), now(), '', '', '', ''
     );
     insert into auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)

@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { mvnoApi } from "@/lib/mvno/api";
+import { hasRealBilling, mvnoApi } from "@/lib/mvno/api";
 import { bundleSummary, formatData, formatMoney, haversineKm } from "@/lib/format";
 import type { Bundle, Contact, Conversation, Delivery, Mvno, Outlet } from "@/lib/types";
 import type { OutboundMessage } from "@/lib/whatsapp/types";
@@ -65,7 +65,30 @@ export async function showMenu(ctx: FlowCtx, intro?: string) {
 
 // ------------------------------------------------------------------ balance & line
 
+/** Self-service USSD hints, used whenever live billing isn't connected. */
+function ussdHelp(ctx: FlowCtx) {
+  const u = ctx.mvno.ussd_codes ?? {};
+  const lines = [
+    u.balance && `📊 Check balance: dial ${u.balance}`,
+    u.self_service && `📶 Buy airtime or bundles: dial ${u.self_service}`,
+    u.promos && `🎉 Promo bundles: dial ${u.promos}`,
+    ctx.mvno.wallet_ussd && `💸 ${ctx.mvno.wallet_name}: dial ${ctx.mvno.wallet_ussd}`,
+  ].filter(Boolean);
+  return lines.length ? lines.join("\n") : "Please visit any of our agents or service centres.";
+}
+
 export async function showBalance(ctx: FlowCtx) {
+  if (!hasRealBilling(ctx.mvno.slug)) {
+    await say(ctx, {
+      type: "buttons",
+      body: `*Check your balance* 📊\n\n${ussdHelp(ctx)}\n\nThe code is free and shows your airtime, data and bundles instantly.`,
+      buttons: [
+        { id: "menu:bundles", title: "See bundles" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+    return;
+  }
   const b = await mvnoApi(ctx.mvno.slug).getBalance(ctx.contact.msisdn ?? ctx.contact.wa_id);
   await say(ctx, {
     type: "buttons",
@@ -87,6 +110,17 @@ export async function showBalance(ctx: FlowCtx) {
 }
 
 export async function showLineStatus(ctx: FlowCtx) {
+  if (!hasRealBilling(ctx.mvno.slug)) {
+    await say(ctx, {
+      type: "buttons",
+      body: `I can't check your line from here yet. An agent can check it for you, or use self-service:\n\n${ussdHelp(ctx)}`,
+      buttons: [
+        { id: "menu:human", title: "Talk to an agent" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+    return;
+  }
   const s = await mvnoApi(ctx.mvno.slug).getLineStatus(ctx.contact.msisdn ?? ctx.contact.wa_id);
   const ok = s.state === "active";
   await say(ctx, {
@@ -161,6 +195,20 @@ export async function showBundleCategory(ctx: FlowCtx, category: Bundle["categor
   });
 }
 
+/** Customer asked about privacy: show the notice and offer a deletion request. */
+export async function showPrivacy(ctx: FlowCtx) {
+  await say(ctx, {
+    type: "buttons",
+    body:
+      `*Your privacy* 🔒\n\n${ctx.mvno.privacy_notice ?? "We only use your messages to help you with your request."}\n\n` +
+      `You can ask us to delete your chat history and details at any time.`,
+    buttons: [
+      { id: "privacy:delete", title: "Delete my data" },
+      { id: "menu:main", title: "Main menu" },
+    ],
+  });
+}
+
 export async function showPromos(ctx: FlowCtx) {
   const promo = ctx.mvno.ussd_codes?.promos;
   await say(ctx, {
@@ -219,6 +267,26 @@ export async function showWallet(ctx: FlowCtx) {
 export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
   const { data: b } = await supabaseAdmin().from("bundles").select("*").eq("id", bundleId).eq("mvno_id", ctx.mvno.id).maybeSingle();
   if (!b) return showBundles(ctx);
+  if (!hasRealBilling(ctx.mvno.slug)) {
+    // No live billing: inform, never sell. Show the bundle's own buying code, or the general one.
+    const code = b.ussd ?? ctx.mvno.ussd_codes?.self_service;
+    await setState(ctx, {});
+    await say(ctx, {
+      type: "buttons",
+      header: b.name,
+      body:
+        `${bundleSummary(b)}\n*Price: ${formatMoney(b.price, ctx.mvno.currency)}*\n\n` +
+        `To buy it, dial ${code ?? "our self-service code"} on your phone` +
+        (ctx.mvno.wallet_ussd ? `, or pay with ${ctx.mvno.wallet_name} on ${ctx.mvno.wallet_ussd}` : "") +
+        `. You can also buy at any of our agents.`,
+      buttons: [
+        { id: "menu:bundles", title: "Other bundles" },
+        { id: "near:agent", title: "Nearest agent" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+    return;
+  }
   await setState(ctx, { flow: "bundle", data: { bundleId } });
   await say(ctx, {
     type: "buttons",
@@ -234,6 +302,7 @@ export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
 }
 
 export async function askOtherNumber(ctx: FlowCtx, purchase: { bundleId?: string; amount?: number }) {
+  if (!hasRealBilling(ctx.mvno.slug)) return purchase.bundleId ? confirmBundle(ctx, purchase.bundleId) : showAirtime(ctx);
   await setState(ctx, { flow: "purchase", awaiting: "msisdn", data: purchase });
   await say(ctx, { type: "text", text: "Type the number to top up, e.g. 0724 123 456" });
 }
@@ -248,6 +317,18 @@ export function normalizeMsisdn(input: string): string | null {
 }
 
 export async function showAirtime(ctx: FlowCtx) {
+  if (!hasRealBilling(ctx.mvno.slug)) {
+    await setState(ctx, {});
+    await say(ctx, {
+      type: "buttons",
+      body: `*Buy airtime* 💳\n\n${ussdHelp(ctx)}\n\nAny of our agents can also top you up.`,
+      buttons: [
+        { id: "near:agent", title: "Nearest agent" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+    return;
+  }
   await setState(ctx, { flow: "airtime" });
   await say(ctx, {
     type: "list",
@@ -264,6 +345,7 @@ export async function showAirtime(ctx: FlowCtx) {
 }
 
 export async function confirmAirtime(ctx: FlowCtx, amount: number) {
+  if (!hasRealBilling(ctx.mvno.slug)) return showAirtime(ctx);
   await setState(ctx, { flow: "airtime", data: { amount } });
   await say(ctx, {
     type: "buttons",
@@ -278,6 +360,8 @@ export async function confirmAirtime(ctx: FlowCtx, amount: number) {
 
 /** Charges via mobile money and records the recharge. */
 export async function executePurchase(ctx: FlowCtx, p: { msisdn: string; bundleId?: string; amount?: number }) {
+  // Hard stop: old "Buy" buttons in a customer's chat must not trigger a fake purchase.
+  if (!hasRealBilling(ctx.mvno.slug)) return p.bundleId ? confirmBundle(ctx, p.bundleId) : showAirtime(ctx);
   const db = supabaseAdmin();
   let amount = p.amount ?? 0;
   let label = `${formatMoney(amount, ctx.mvno.currency)} airtime`;

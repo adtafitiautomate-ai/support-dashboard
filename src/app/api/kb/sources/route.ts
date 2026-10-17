@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { errorResponse, HttpError, requireAgent } from "@/lib/inbox/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ingestSource, type SourceInput } from "@/lib/kb/ingest";
+import { audit, enforce, LIMITS } from "@/lib/security";
 
 export const maxDuration = 300; // long documents take a while to distill
 
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
     if (!profile.is_platform_admin && !["admin", "supervisor"].includes(membership?.role ?? "")) {
       throw new HttpError(403, "Only supervisors and admins can train the bot");
     }
+    await enforce(`kb:${profile.id}`, LIMITS.kbIngest);
 
     let input: SourceInput;
     let name: string;
@@ -53,6 +55,7 @@ export async function POST(req: Request) {
       .single();
     if (error) throw error;
 
+    await audit(profile, "knowledge.source_added", { mvnoId, target: name, details: { kind: input.kind } });
     after(() => ingestSource(source.id, mvnoId, input));
     return Response.json({ source });
   } catch (e) {

@@ -39,6 +39,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static assets, public files (images, icons, fonts…) and the public WhatsApp webhook.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/whatsapp|.*\\.(?:webp|png|jpe?g|gif|svg|ico|avif|woff2?|txt|xml)$).*)"],
+  // Skip static assets, public files (images, icons, fonts…), the WhatsApp webhook (Meta-signed)
+  // and cron jobs (CRON_SECRET-authenticated).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/whatsapp|api/cron|.*\\.(?:webp|png|jpe?g|gif|svg|ico|avif|woff2?|txt|xml)$).*)"],
 };

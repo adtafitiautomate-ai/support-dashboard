@@ -18,6 +18,11 @@ export async function POST(req: NextRequest) {
   // One secret per Meta app (e.g. PaxTel's and SalamTel's apps), comma-separated.
   const secrets = (process.env.WHATSAPP_APP_SECRET ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const signature = req.headers.get("x-hub-signature-256");
+  // Fail closed in production: without a secret we can't tell Meta from an impostor.
+  if (!secrets.length && process.env.NODE_ENV === "production") {
+    console.error("WHATSAPP_APP_SECRET is not configured: rejecting webhook");
+    return new Response("Webhook not configured", { status: 503 });
+  }
   if (secrets.length && !secrets.some((s) => verifySignature(raw, signature, s))) {
     return new Response("Invalid signature", { status: 401 });
   }

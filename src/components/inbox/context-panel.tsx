@@ -9,11 +9,14 @@ import { api, Avatar, Badge, cx, relTime, useNow } from "@/components/ui";
 import { formatData, formatMoney, formatPhone } from "@/lib/format";
 import { useWorkspace } from "@/components/workspace";
 
-interface Account {
-  balance: { airtime: number; dataMb: number; minutes: number; sms: number; expiresAt: string; activeBundle: string | null };
-  line: { state: string; kyc: string; simType: string; network: string };
-  currency: string;
-}
+type Account =
+  | { connected: false; currency: string }
+  | {
+      connected: true;
+      balance: { airtime: number; dataMb: number; minutes: number; sms: number; expiresAt: string; activeBundle: string | null };
+      line: { state: string; kyc: string; simType: string; network: string };
+      currency: string;
+    };
 
 type Tab = "overview" | "account" | "history";
 const DELIVERY_STATUSES: Delivery["status"][] = ["requested", "scheduled", "out_for_delivery", "delivered", "failed", "cancelled"];
@@ -191,6 +194,10 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
             <Section icon={<Wallet className="size-3.5" />} title="Live balance">
               {!account ? (
                 <div className="h-16 animate-pulse rounded-xl bg-surface" />
+              ) : !account.connected ? (
+                <p className="text-[13px] text-muted">
+                  Billing isn&apos;t connected for this MVNO yet, so live balances aren&apos;t available. The bot sends customers the USSD codes instead.
+                </p>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -273,6 +280,7 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
             {history.length <= 1 && <li className="py-6 text-center text-xs text-muted">First conversation 👋</li>}
           </ul>
         )}
+        {tab === "history" && <EraseCustomer contactId={contact.id} mvnoId={c.mvno_id} />}
       </div>
     </aside>
   );
@@ -314,6 +322,52 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex justify-between py-0.5">
       <span className="text-muted">{k}</span>
       <span>{v}</span>
+    </div>
+  );
+}
+
+/** Data-protection erasure request (supervisors/admins). Two-step confirm, then reloads the inbox. */
+function EraseCustomer({ contactId, mvnoId }: { contactId: string; mvnoId: string }) {
+  const canErase = useStore(
+    (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && m.mvno_id === mvnoId && (m.role === "admin" || m.role === "supervisor")),
+  );
+  const [step, setStep] = useState<"idle" | "confirm" | "busy">("idle");
+  const [error, setError] = useState<string | null>(null);
+  if (!canErase) return null;
+
+  async function erase() {
+    setStep("busy");
+    setError(null);
+    try {
+      await api(`/api/contacts/${contactId}/erase`, {});
+      window.location.assign(new URL("/inbox", window.location.origin));
+    } catch (e) {
+      setError((e as Error).message);
+      setStep("confirm");
+    }
+  }
+
+  return (
+    <div className="mt-6 rounded-2xl border border-red-200 bg-red-50/60 p-3 text-[13px]">
+      <div className="font-medium text-red-800">Erase customer data</div>
+      <p className="mt-0.5 text-xs text-red-700/80">
+        For data-protection deletion requests. Permanently deletes this customer&apos;s chats, messages, photos and profile. Top-up records are kept for finance, unlinked.
+      </p>
+      {step === "idle" ? (
+        <button onClick={() => setStep("confirm")} className="mt-2 rounded-lg px-2.5 py-1 text-xs font-medium text-red-700 ring-1 ring-red-300 hover:bg-red-100">
+          Erase…
+        </button>
+      ) : (
+        <div className="mt-2 flex items-center gap-2">
+          <button onClick={erase} disabled={step === "busy"} className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-60">
+            {step === "busy" ? "Erasing…" : "Yes, erase permanently"}
+          </button>
+          <button onClick={() => setStep("idle")} className="text-xs text-muted hover:text-ink">
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   );
 }

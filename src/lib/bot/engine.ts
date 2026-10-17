@@ -16,6 +16,7 @@ import {
 } from "@/lib/inbox/service";
 import * as F from "./flows";
 import { storeInboundMedia } from "@/lib/whatsapp/media";
+import { allow, LIMITS } from "@/lib/security";
 import { runAgent, triage } from "./ai";
 
 /** Entry point for every inbound WhatsApp message, from Meta or the simulator. */
@@ -54,7 +55,17 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   // Save photos / voice notes / documents in parallel with the reply, so media never slows the bot.
   const mediaJob = msg.mediaId ? storeInboundMedia(stored).catch((e) => console.error("media", e)) : null;
   try {
-    await respond({ mvno, conv, contact }, msg);
+    const ctx: F.FlowCtx = { mvno, conv, contact };
+    if (/^(privacy|data|faragha)$/i.test(msg.text?.trim() ?? "") && conv.status === "bot") {
+      await F.showPrivacy(ctx);
+    } else {
+      await respond(ctx, msg);
+    }
+    // Data-protection notice: once per customer, after their first reply.
+    if (mvno.privacy_notice && !contact.privacy_notice_sent_at) {
+      await F.say(ctx, { type: "text", text: `ℹ️ ${mvno.privacy_notice}` });
+      await supabaseAdmin().from("contacts").update({ privacy_notice_sent_at: new Date().toISOString() }).eq("id", contact.id);
+    }
   } finally {
     await mediaJob;
   }
@@ -137,6 +148,9 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
           : F.askOtherNumber(ctx, { amount: Number(b) });
       case "deliver":
         return F.askLocation(ctx, "delivery", { item: a });
+      case "privacy":
+        // Deletion requests are handled by a person (identity check, legal holds), then erased from the dashboard.
+        return doHandoff(ctx, { reason: "Customer requested deletion of their data (privacy request)", priority: "high", category: "account" });
       case "near":
         return findNearest(ctx, a === "store" || a === "agent" ? a : undefined);
     }
@@ -197,6 +211,8 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
     });
   }
 
+  // Cap AI replies per customer so one chat can't run up model costs; menus still work past the cap.
+  if (!(await allow(`ai:bot:${ctx.mvno.id}:${ctx.contact.wa_id}`, LIMITS.botAiPerCustomer))) return keywordFallback(ctx, text);
   const turn = await runAgent(ctx.mvno, ctx.contact, history).catch((e) => {
     console.error("claude error", e);
     return null;

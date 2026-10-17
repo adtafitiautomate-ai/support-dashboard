@@ -4,6 +4,7 @@ import { requirePlatformAdmin, slugify } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { forgetMvno } from "@/lib/inbox/service";
 import { setMvnoToken } from "@/lib/wa-tokens";
+import { audit, enforce, LIMITS } from "@/lib/security";
 
 const Fields = z.object({
   name: z.string().trim().min(2).max(60),
@@ -16,6 +17,8 @@ const Fields = z.object({
   greeting: z.string().trim().max(300).optional(),
   bot_persona: z.string().trim().max(2000).optional(),
   sla_first_response_mins: z.number().int().min(1).max(1440).default(5),
+  retention_days: z.number().int().min(30).max(3650).optional(),
+  privacy_notice: z.string().trim().max(600).optional().nullable(),
   ussd_codes: z
     .object({ balance: z.string().max(20).optional(), self_service: z.string().max(20).optional(), promos: z.string().max(20).optional() })
     .optional(),
@@ -36,9 +39,10 @@ const DEFAULT_REPLIES = [
 
 export async function POST(req: Request) {
   try {
-    await requirePlatformAdmin();
+    const { profile: me } = await requirePlatformAdmin();
     const body = Body.parse(await req.json());
     const db = supabaseAdmin();
+    await enforce(`admin:${me.id}`, LIMITS.admin);
 
     if (body.action === "create") {
       const m = body.mvno;
@@ -59,6 +63,7 @@ export async function POST(req: Request) {
       if (error?.code === "23505") throw new HttpError(409, "An MVNO with that name already exists");
       if (error) throw error;
       await db.from("canned_responses").insert(DEFAULT_REPLIES.map(([shortcut, title, text]) => ({ mvno_id: data.id, shortcut, title, body: text })));
+      await audit(me, "mvno.created", { mvnoId: data.id, target: data.name });
       return Response.json({ mvno: data });
     }
 
@@ -66,6 +71,7 @@ export async function POST(req: Request) {
       try {
         const result = await setMvnoToken(body.id, body.token);
         forgetMvno(body.id);
+        await audit(me, "whatsapp.token_renewed", { mvnoId: body.id, details: { expires_at: result.expires_at, converted: result.exchanged } });
         return Response.json(result);
       } catch (e) {
         throw new HttpError(400, e instanceof Error ? e.message : "Could not save token");
@@ -75,6 +81,7 @@ export async function POST(req: Request) {
     const { data, error } = await db.from("mvnos").update(body.mvno).eq("id", body.id).select().single();
     if (error) throw error;
     forgetMvno(body.id);
+    await audit(me, "mvno.updated", { mvnoId: body.id, target: data.name, details: { fields: Object.keys(body.mvno) } });
     return Response.json({ mvno: data });
   } catch (e) {
     if (e instanceof z.ZodError) return Response.json({ error: e.issues[0]?.message ?? "Invalid input" }, { status: 400 });

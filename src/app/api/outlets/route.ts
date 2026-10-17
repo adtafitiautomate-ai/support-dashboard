@@ -1,6 +1,7 @@
 import { errorResponse, HttpError, requireAgent } from "@/lib/inbox/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { parseCsv } from "@/lib/csv";
+import { audit } from "@/lib/security";
 
 // Header aliases → outlet fields.
 const ALIASES: Record<string, string[]> = {
@@ -26,9 +27,10 @@ function kindOf(v: string): "agent" | "store" | "kiosk" {
 
 async function requireManager(mvnoId: string) {
   const { supabase, profile } = await requireAgent();
-  if (profile.is_platform_admin) return;
+  if (profile.is_platform_admin) return profile;
   const { data } = await supabase.from("mvno_members").select("role").eq("mvno_id", mvnoId).eq("user_id", profile.id).maybeSingle();
   if (!data || (data.role !== "admin" && data.role !== "supervisor")) throw new HttpError(403, "Only supervisors and admins can manage locations");
+  return profile;
 }
 
 /** POST multipart: file (CSV), mvnoId, mode = "add" | "replace". */
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const mvnoId = String(form.get("mvnoId") ?? "");
     const mode = form.get("mode") === "replace" ? "replace" : "add";
-    await requireManager(mvnoId);
+    const actor = await requireManager(mvnoId);
 
     const file = form.get("file");
     if (!(file instanceof File) || !file.size) throw new HttpError(400, "Choose a CSV file");
@@ -103,6 +105,7 @@ export async function POST(req: Request) {
       const { error } = await db.from("outlets").insert(rows.slice(i, i + 500));
       if (error) throw error;
     }
+    await audit(actor, "locations.imported", { mvnoId, target: file.name, details: { mode, imported: rows.length, removed, skipped: skipped.length } });
     return Response.json({ imported: rows.length, removed, skipped });
   } catch (e) {
     return errorResponse(e);
@@ -113,10 +116,11 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const id = new URL(req.url).searchParams.get("id") ?? "";
-    const { data: outlet } = await supabaseAdmin().from("outlets").select("mvno_id").eq("id", id).maybeSingle();
+    const { data: outlet } = await supabaseAdmin().from("outlets").select("mvno_id, name").eq("id", id).maybeSingle();
     if (!outlet) throw new HttpError(404, "Location not found");
-    await requireManager(outlet.mvno_id);
+    const actor = await requireManager(outlet.mvno_id);
     await supabaseAdmin().from("outlets").delete().eq("id", id);
+    await audit(actor, "locations.deleted", { mvnoId: outlet.mvno_id, target: outlet.name });
     return Response.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

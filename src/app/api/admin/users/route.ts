@@ -3,6 +3,7 @@ import { errorResponse, HttpError } from "@/lib/inbox/auth";
 import { requirePlatformAdmin, tempPassword } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { toLoginEmail } from "@/lib/login";
+import { audit, enforce, LIMITS } from "@/lib/security";
 
 const Role = z.enum(["admin", "supervisor", "agent"]);
 
@@ -34,21 +35,28 @@ export async function POST(req: Request) {
     const { profile: me } = await requirePlatformAdmin();
     const body = Body.parse(await req.json());
     const db = supabaseAdmin();
+    await enforce(`admin:${me.id}`, LIMITS.admin);
+    const nameOf = async (id: string) => (await db.from("profiles").select("full_name").eq("id", id).maybeSingle()).data?.full_name ?? id;
 
     switch (body.action) {
       case "create": {
         const password = body.password ?? tempPassword();
+        // Invite-only: the database rejects any new account whose email isn't on the invite list.
+        const { error: inviteErr } = await db.rpc("allow_signup", { p_email: body.email });
+        if (inviteErr) throw inviteErr;
         const { data, error } = await db.auth.admin.createUser({
           email: body.email.toLowerCase(),
           password,
           email_confirm: true,
           user_metadata: { full_name: body.full_name },
+          app_metadata: { invited: true }, // passes the invite-only sign-up guard
         });
         if (error) throw new HttpError(error.status === 422 ? 409 : 400, error.message.includes("already") ? "A user with that email already exists" : error.message);
         const id = data.user.id;
         // Profile row is created by the auth trigger; make sure name/admin flag are set.
         await db.from("profiles").upsert({ id, full_name: body.full_name, is_platform_admin: body.platform_admin });
         if (body.mvno_id) await db.from("mvno_members").upsert({ mvno_id: body.mvno_id, user_id: id, role: body.role });
+        await audit(me, "user.created", { target: body.full_name, mvnoId: body.mvno_id ?? null, details: { login: data.user.email, role: body.role, super_admin: body.platform_admin } });
         return Response.json({ user_id: id, email: data.user.email, password });
       }
       case "set_membership": {
@@ -58,12 +66,14 @@ export async function POST(req: Request) {
           const { error } = await db.from("mvno_members").upsert({ mvno_id: body.mvno_id, user_id: body.user_id, role: body.role });
           if (error) throw error;
         }
+        await audit(me, body.role === null ? "user.access_removed" : "user.role_set", { target: await nameOf(body.user_id), mvnoId: body.mvno_id, details: { role: body.role } });
         return Response.json({ ok: true });
       }
       case "reset_password": {
         const password = body.password ?? tempPassword();
         const { error } = await db.auth.admin.updateUserById(body.user_id, { password });
         if (error) throw error;
+        await audit(me, "user.password_reset", { target: await nameOf(body.user_id) });
         return Response.json({ password });
       }
       case "set_disabled": {
@@ -71,20 +81,24 @@ export async function POST(req: Request) {
         const { error } = await db.auth.admin.updateUserById(body.user_id, { ban_duration: body.disabled ? "876000h" : "none" });
         if (error) throw error;
         if (body.disabled) {
-          // Sign them out everywhere and stop routing chats to them.
-          await db.auth.admin.signOut(body.user_id).catch(() => undefined);
+          // The ban blocks sign-in and session refresh, so any open session ends when its
+          // access token expires (<= 1 hour). Also stop routing chats to them right away.
           await db.from("profiles").update({ status: "offline" }).eq("id", body.user_id);
         }
+        await audit(me, body.disabled ? "user.disabled" : "user.enabled", { target: await nameOf(body.user_id) });
         return Response.json({ ok: true });
       }
       case "set_platform_admin": {
         if (body.user_id === me.id && !body.value) throw new HttpError(400, "You can't remove your own super admin access");
         await db.from("profiles").update({ is_platform_admin: body.value }).eq("id", body.user_id);
+        await audit(me, body.value ? "user.super_admin_granted" : "user.super_admin_removed", { target: await nameOf(body.user_id) });
         return Response.json({ ok: true });
       }
       case "rename": {
+        const before = await nameOf(body.user_id);
         await db.from("profiles").update({ full_name: body.full_name }).eq("id", body.user_id);
         await db.auth.admin.updateUserById(body.user_id, { user_metadata: { full_name: body.full_name } });
+        await audit(me, "user.renamed", { target: body.full_name, details: { from: before } });
         return Response.json({ ok: true });
       }
     }

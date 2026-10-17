@@ -3,6 +3,7 @@ import { errorResponse, HttpError, requireConversation } from "@/lib/inbox/auth"
 import { logEvent, recentMessages, resolveConversation, sendMessage, updateConversation } from "@/lib/inbox/service";
 import { suggestReply, triage } from "@/lib/bot/ai";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { enforce, LIMITS } from "@/lib/security";
 
 const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("assign"), userId: z.guid().nullable() }),
@@ -93,6 +94,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
       case "read":
         return Response.json({ conversation: await updateConversation(conv.id, { unread_count: 0 }) });
       case "summarize": {
+        await enforce(`ai:summary:${profile.id}`, LIMITS.aiSummary);
         const t = await triage(await recentMessages(conv.id, 60));
         if (!t) throw new HttpError(503, "AI is not configured (set ANTHROPIC_API_KEY)");
         const updated = await updateConversation(conv.id, {
@@ -104,6 +106,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
         return Response.json({ conversation: updated });
       }
       case "suggest": {
+        await enforce(`ai:draft:${profile.id}`, LIMITS.aiDraft);
         const draft = await suggestReply(mvno, contact, await recentMessages(conv.id, 40), who, body.instruction);
         if (draft === null) throw new HttpError(503, "AI is not configured (set ANTHROPIC_API_KEY)");
         return Response.json({ draft });

@@ -1,6 +1,7 @@
 import { connection, type NextRequest } from "next/server";
 import { errorResponse, HttpError, requireAgent } from "@/lib/inbox/auth";
 import { buildReport, REPORTS, toCsv, type ReportType } from "@/lib/reports";
+import { audit, enforce, LIMITS } from "@/lib/security";
 
 /** GET /api/reports?type=summary&mvno=<id|all>&from=YYYY-MM-DD&to=YYYY-MM-DD&format=json|csv */
 export async function GET(req: NextRequest) {
@@ -23,12 +24,19 @@ export async function GET(req: NextRequest) {
     const mvno = p.get("mvno") ?? "all";
     const mvnoIds = mvno === "all" ? allowed : allowed.filter((id) => id === mvno);
     if (!mvnoIds.length) throw new HttpError(403, "You can't run reports for this MVNO");
+    await enforce(`reports:${profile.id}`, LIMITS.reports);
 
     const toExclusive = new Date(`${to}T00:00:00Z`);
     toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
     const report = await buildReport(type, { mvnoIds, from: `${from}T00:00:00Z`, to: toExclusive.toISOString() });
 
     if (p.get("format") === "csv") {
+      // Exports contain customer data: record who took what (data-protection accountability).
+      await audit(profile, "report.exported", {
+        mvnoId: mvnoIds.length === 1 ? mvnoIds[0] : null,
+        target: REPORTS[type],
+        details: { type, from, to, rows: report.rows.length, mvnos: mvnoIds.length },
+      });
       return new Response(toCsv(report), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",

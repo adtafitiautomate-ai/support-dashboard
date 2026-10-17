@@ -15,6 +15,8 @@ export interface Mvno {
   wallet_ussd: string | null;
   care_line: string | null;
   ussd_codes: { self_service?: string; balance?: string; promos?: string };
+  retention_days: number;
+  privacy_notice: string | null;
   wa_phone_number_id: string | null;
   wa_display_number: string | null;
   bot_name: string;
@@ -51,6 +53,7 @@ export interface Contact {
   plan: string | null;
   notes: string | null;
   last_location: { lat: number; lng: number; at: string } | null;
+  privacy_notice_sent_at?: string | null;
   created_at: string;
   last_seen_at: string | null;
 }

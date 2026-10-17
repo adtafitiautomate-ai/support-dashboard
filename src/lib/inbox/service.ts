@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { isSimulatedRun, SIMULATOR_TAG } from "./simulation";
 import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/meta";
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
@@ -64,7 +65,14 @@ export async function upsertContact(mvno: Mvno, waId: string, profileName?: stri
   const { data, error } = await db
     .from("contacts")
     .upsert(
-      { mvno_id: mvno.id, wa_id: waId, msisdn: waId, name: profileName ?? null, last_seen_at: new Date().toISOString() },
+      {
+        mvno_id: mvno.id,
+        wa_id: waId,
+        msisdn: waId,
+        name: profileName ?? null,
+        last_seen_at: new Date().toISOString(),
+        tags: isSimulatedRun() ? [SIMULATOR_TAG] : [],
+      },
       { onConflict: "mvno_id,wa_id" },
     )
     .select()
@@ -149,6 +157,7 @@ export async function recordInbound(conv: Conversation, msg: InboundMessage): Pr
 }
 
 export async function markReadAndTyping(mvno: Mvno, waMessageId: string) {
+  if (isSimulatedRun()) return;
   const creds = await waCredentials(mvno);
   if (creds) await metaMarkReadAndTyping(creds.phoneNumberId, creds.token, waMessageId);
 }
@@ -162,7 +171,7 @@ interface SendOpts {
 export async function sendMessage(
   mvno: Mvno,
   conv: Pick<Conversation, "id" | "mvno_id">,
-  contact: Pick<Contact, "wa_id">,
+  contact: Pick<Contact, "wa_id"> & { tags?: string[] },
   out: OutboundMessage,
   opts: SendOpts,
 ): Promise<Message> {
@@ -184,7 +193,9 @@ export async function sendMessage(
     .single();
   if (error) throw error;
 
-  const creds = await waCredentials(mvno);
+  // Simulator chats never reach WhatsApp, even on MVNOs with a live number.
+  const simulated = isSimulatedRun() || !!contact.tags?.includes(SIMULATOR_TAG);
+  const creds = simulated ? null : await waCredentials(mvno);
   if (!creds) {
     // Simulator: emulate Meta's sent → delivered → read receipts.
     const waId = `sim.${row.id}`;

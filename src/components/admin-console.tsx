@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
+import { Building2, History, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { patch } from "@/lib/store";
 import type { MemberRole, Mvno } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { api, Avatar, Badge, cx, relTime, useNow } from "./ui";
+import { ActivityLog } from "./admin-activity";
 import { RenewToken, TokenCountdown, type TokenInfo } from "./admin-token";
 import { displayLogin } from "@/lib/login";
 
@@ -26,7 +27,7 @@ const ROLES: MemberRole[] = ["admin", "supervisor", "agent"];
 const roleTone = { admin: "violet", supervisor: "blue", agent: "neutral" } as const;
 
 export function AdminConsole() {
-  const [tab, setTab] = useState<"mvnos" | "users">("mvnos");
+  const [tab, setTab] = useState<"mvnos" | "users" | "activity">("mvnos");
   const [data, setData] = useState<{ mvnos: AdminMvno[]; users: AdminUser[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<AdminMvno> | null>(null);
@@ -98,6 +99,7 @@ export function AdminConsole() {
           [
             ["mvnos", "MVNOs", Building2, data.mvnos.length],
             ["users", "Users", Users, data.users.length],
+            ["activity", "Activity", History, ""],
           ] as const
         ).map(([id, label, Icon, n]) => (
           <button key={id} onClick={() => setTab(id)} className={cx("flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-medium", tab === id ? "bg-white shadow-sm" : "text-muted hover:text-ink")}>
@@ -148,6 +150,8 @@ export function AdminConsole() {
           ))}
         </div>
       )}
+
+      {tab === "activity" && <ActivityLog />}
 
       {tab === "users" && (
         <section className="card overflow-hidden">
@@ -373,13 +377,15 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
     bot_name: initial.bot_name ?? "Assistant",
     greeting: initial.greeting ?? "",
     sla_first_response_mins: initial.sla_first_response_mins ?? 5,
+    retention_days: initial.retention_days ?? 730,
+    privacy_notice: initial.privacy_notice ?? "",
     balance: initial.ussd_codes?.balance ?? "",
     self_service: initial.ussd_codes?.self_service ?? "",
     promos: initial.ussd_codes?.promos ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: k === "sla_first_response_mins" ? Number(e.target.value) : e.target.value });
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: k === "sla_first_response_mins" || k === "retention_days" ? Number(e.target.value) : e.target.value });
 
   async function save(e: { preventDefault(): void }) {
     e.preventDefault();
@@ -390,6 +396,7 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
       ...rest,
       wallet_ussd: rest.wallet_ussd || null,
       care_line: rest.care_line || null,
+      privacy_notice: rest.privacy_notice || null,
       greeting: rest.greeting || undefined,
       ussd_codes: Object.fromEntries(Object.entries({ balance, self_service, promos }).filter(([, v]) => v)),
     };
@@ -449,6 +456,21 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
         <L label="Greeting" hint={isNew ? "Leave empty for a default greeting" : undefined}>
           <input className={field} value={f.greeting} onChange={set("greeting")} />
         </L>
+        <div className="grid grid-cols-[120px_1fr] gap-3">
+          <L label="Keep chats (days)" hint="Then deleted automatically">
+            <input type="number" min={30} max={3650} className={field} value={f.retention_days} onChange={set("retention_days")} />
+          </L>
+          <L label="Privacy notice" hint="Sent once to each new customer (Uganda DPPA 2019)">
+            <textarea
+              rows={3}
+              maxLength={600}
+              className={field}
+              value={f.privacy_notice}
+              onChange={(e) => setF({ ...f, privacy_notice: e.target.value })}
+              placeholder="We use your messages only to help you…"
+            />
+          </L>
+        </div>
         {isNew && (
           <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-muted">
             The new MVNO starts on the simulator. Connect its WhatsApp number in Settings → WhatsApp number, then add bundles, outlets and knowledge in the Knowledge page.

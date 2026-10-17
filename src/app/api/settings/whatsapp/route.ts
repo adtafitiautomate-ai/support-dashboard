@@ -2,6 +2,7 @@ import { z } from "zod";
 import { errorResponse, HttpError, requireAgent } from "@/lib/inbox/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { forgetMvno } from "@/lib/inbox/service";
+import { audit } from "@/lib/security";
 
 // Connects an MVNO to a Meta WhatsApp number (or back to the simulator).
 const Body = z.object({
@@ -38,6 +39,11 @@ export async function POST(req: Request) {
       if (tokenErr) throw tokenErr;
     }
     forgetMvno(body.mvnoId);
+    await audit(profile, body.phoneNumberId ? "whatsapp.number_connected" : "whatsapp.switched_to_simulator", {
+      mvnoId: body.mvnoId,
+      target: phoneNumberId,
+      details: { display_number: body.displayNumber ?? null, token_updated: !!body.accessToken },
+    });
     return Response.json({ ok: true, phoneNumberId });
   } catch (e) {
     if (e instanceof z.ZodError) return Response.json({ error: "Invalid request" }, { status: 400 });

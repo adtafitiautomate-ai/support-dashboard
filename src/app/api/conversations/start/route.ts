@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { errorResponse, HttpError, requireMvnoMember } from "@/lib/inbox/auth";
+import { enforce, LIMITS } from "@/lib/security";
 import { getActiveConversation, logEvent, sendMessage, updateConversation, upsertContact } from "@/lib/inbox/service";
 
 // Business-initiated outreach: WhatsApp requires an approved template to open the chat.
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
   try {
     const body = Body.parse(await req.json());
     const { profile, mvno } = await requireMvnoMember(body.mvnoId);
+    await enforce(`outreach:${profile.id}`, LIMITS.outreach);
 
     const contact = await upsertContact(mvno, body.to, body.name);
     let conv = await getActiveConversation(mvno, contact);

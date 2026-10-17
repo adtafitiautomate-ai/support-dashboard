@@ -84,6 +84,15 @@ const mock = new MockMvnoApi();
 // Register real integrations here as they become available, e.g. { nova: new NovaBssApi() }.
 const adapters: Record<string, MvnoApi> = {};
 
+/**
+ * True only when a real BSS/billing adapter is registered for this MVNO.
+ * Without one, the bot never sells, charges or shows balances: it points
+ * customers to USSD self-service instead (the mock must never reach customers).
+ */
+export function hasRealBilling(mvnoSlug: string) {
+  return mvnoSlug in adapters;
+}
+
 export function mvnoApi(mvnoSlug: string): MvnoApi {
   return adapters[mvnoSlug] ?? mock;
 }

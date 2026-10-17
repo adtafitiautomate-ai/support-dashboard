@@ -5,12 +5,6 @@ import { ArrowRight, Headphones, Loader2, Lock, Mail } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { toLoginEmail } from "@/lib/login";
 
-const DEMO = [
-  { email: "admin@demo.test", label: "Platform admin" },
-  { email: "sarah@paxtel.test", label: "PaxTel supervisor" },
-  { email: "david@paxtel.test", label: "PaxTel agent" },
-];
-
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -88,23 +82,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {process.env.NODE_ENV !== "production" && (
-            <div className="mt-8">
-              <div className="mb-2 text-[11px] font-medium tracking-wider text-zinc-400 uppercase">Demo accounts</div>
-              <div className="flex flex-wrap gap-1.5">
-                {DEMO.map((d) => (
-                  <button
-                    key={d.email}
-                    onClick={() => signIn(undefined, { email: d.email, password: "Password123!" })}
-                    title={d.email}
-                    className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-900 hover:text-zinc-900 dark:border-line dark:text-muted"
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          
         </div>
 
         <p className="text-xs text-zinc-400">Tuvugane · Customer care on WhatsApp</p>
