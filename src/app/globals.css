@@ -1,26 +1,134 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  color-scheme: light dark;
+  --canvas: #f4f5f5;
+  --canvas-2: #f7f7f7;
+  --surface: #ffffff;
+  --surface-2: #f4f5f5;
+  --line: #e6e8e8;
+  --ink: #0d1110;
+  --muted: #6e7372;
+  --accent: #16a06b; /* green only for primary actions (send) and live/online signals */
+  --accent-soft: #eef0ef; /* selection states stay neutral */
+  --bubble-in: #f4f5f5;
+  --bubble-out: #eef5f1;
+  --bubble-note: #fff6d6;
+  --chat-bg: #ffffff;
+  --danger: #d92d20;
+  --warn: #c76a00;
+  --shadow: 0 1px 2px rgb(16 24 20 / 0.04), 0 8px 24px -12px rgb(16 24 20 / 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0a0f0d;
+    --canvas-2: #0e1512;
+    --surface: #121916;
+    --surface-2: #19211d;
+    --line: #232d28;
+    --ink: #e8eeeb;
+    --muted: #8d9993;
+    --accent: #2fc285;
+    --accent-soft: #1d2522;
+    --bubble-in: #1b2420;
+    --bubble-out: #12362a;
+    --bubble-note: #3a3214;
+    --chat-bg: #121916;
+    --danger: #f97066;
+    --warn: #fdb022;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-out: var(--bubble-out);
+  --color-bubble-note: var(--bubble-note);
+  --color-chat: var(--chat-bg);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* Photo background with a white veil so white cards and text stay readable. */
+  background:
+    linear-gradient(180deg, var(--veil-top) 0%, var(--veil-bottom) 100%),
+    url(/backdrop.webp) center / cover no-repeat fixed,
+    var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+:root {
+  --veil-top: rgb(255 255 255 / 0.62);
+  --veil-bottom: rgb(255 255 255 / 0.8);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --veil-top: rgb(10 14 12 / 0.78);
+    --veil-bottom: rgb(10 14 12 / 0.9);
+  }
+}
+
+/* Translucent white glass for bars and pill tracks that sit on the photo. */
+.glass {
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  outline: 1px solid rgb(0 0 0 / 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  .glass {
+    background: rgb(255 255 255 / 0.06);
+    outline-color: rgb(255 255 255 / 0.08);
+  }
+}
+
+.card {
+  background: var(--surface);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.chat-wallpaper {
+  background-color: var(--chat-bg);
+  background-image: radial-gradient(color-mix(in oklab, var(--ink) 3%, transparent) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.typing-dot { animation: pulse-dot 1.2s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes flash-in {
+  from { background-color: var(--accent-soft); }
+  to { background-color: transparent; }
+}
+.flash-in { animation: flash-in 1.2s ease-out; }

@@ -1,0 +1,67 @@
+// Provider-neutral outbound message shapes. The Meta adapter maps these to
+// Cloud API payloads; the dashboard and simulator render them directly.
+
+export interface ReplyButton {
+  id: string;
+  title: string; // max 20 chars on WhatsApp
+}
+
+export interface ListRow {
+  id: string;
+  title: string; // max 24 chars
+  description?: string; // max 72 chars
+}
+
+export interface ListSection {
+  title: string;
+  rows: ListRow[];
+}
+
+export type OutboundMessage =
+  | { type: "text"; text: string; previewUrl?: boolean }
+  | { type: "buttons"; body: string; header?: string; footer?: string; buttons: ReplyButton[] }
+  | { type: "list"; body: string; button: string; header?: string; footer?: string; sections: ListSection[] }
+  | { type: "location"; lat: number; lng: number; name?: string; address?: string }
+  | { type: "location_request"; body: string }
+  | { type: "cta_url"; body: string; buttonText: string; url: string }
+  | { type: "template"; name: string; language: string; params?: string[] };
+
+/** Normalized inbound message from any provider. */
+export interface InboundMessage {
+  waMessageId: string;
+  from: string;
+  profileName?: string;
+  timestamp: Date;
+  type: "text" | "button_reply" | "list_reply" | "location" | "image" | "audio" | "video" | "document" | "sticker" | "unknown";
+  text?: string;
+  replyId?: string;
+  location?: { lat: number; lng: number; name?: string; address?: string };
+  mediaId?: string;
+  caption?: string;
+}
+
+export interface StatusUpdate {
+  waMessageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  error?: string;
+}
+
+/** Human-readable preview text for storage and the inbox list. */
+export function outboundPreview(msg: OutboundMessage): string {
+  switch (msg.type) {
+    case "text":
+      return msg.text;
+    case "buttons":
+      return msg.body;
+    case "list":
+      return msg.body;
+    case "location":
+      return `📍 ${msg.name ?? "Location"}${msg.address ? ` – ${msg.address}` : ""}`;
+    case "location_request":
+      return msg.body;
+    case "cta_url":
+      return msg.body;
+    case "template":
+      return `[template] ${msg.name}`;
+  }
+}
