@@ -15,8 +15,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const raw = await req.text();
-  const secret = process.env.WHATSAPP_APP_SECRET;
-  if (secret && !verifySignature(raw, req.headers.get("x-hub-signature-256"), secret)) {
+  // One secret per Meta app (e.g. PaxTel's and SalamTel's apps), comma-separated.
+  const secrets = (process.env.WHATSAPP_APP_SECRET ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const signature = req.headers.get("x-hub-signature-256");
+  if (secrets.length && !secrets.some((s) => verifySignature(raw, signature, s))) {
     return new Response("Invalid signature", { status: 401 });
   }
 
