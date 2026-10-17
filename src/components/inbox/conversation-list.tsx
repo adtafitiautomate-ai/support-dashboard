@@ -90,7 +90,7 @@ export function ConversationList(props: { list: Conversation[]; view: InboxView;
                 onClick={() => props.onSelect(c.id)}
                 className={cx(
                   "relative flex w-full gap-3 rounded-2xl px-2.5 py-2.5 text-left transition",
-                  active ? "bg-accent-soft" : "hover:bg-surface-2",
+                  active ? "bg-white shadow-sm" : "hover:bg-white/50",
                 )}
               >
                 {(c.priority === "urgent" || c.priority === "high") && (

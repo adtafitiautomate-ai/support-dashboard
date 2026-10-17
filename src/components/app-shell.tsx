@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BarChart3, Bell, BookOpen, ChevronDown, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
+import { BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -54,6 +54,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/dashboard", label: "Insights", icon: BarChart3 },
+  { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
   { href: "/simulator", label: "Simulator", icon: Smartphone },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -90,11 +91,16 @@ function PillNav() {
     return n;
   });
 
-  const active = NAV.find((n) => pathname.startsWith(n.href))?.href;
+  const isManager = useStore(
+    (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
+  );
+  const items = NAV.filter((n) => !n.managersOnly || isManager);
+
+  const active = items.find((n) => pathname.startsWith(n.href))?.href;
   useLayoutEffect(() => {
     const el = active ? refs.current[active] : null;
     setPill(el ? { left: el.offsetLeft, width: el.offsetWidth } : null);
-  }, [active]);
+  }, [active, isManager]);
 
   return (
     <nav className="relative flex items-center gap-0.5 rounded-full glass p-1">
@@ -104,7 +110,7 @@ function PillNav() {
           style={{ left: pill.left, width: pill.width }}
         />
       )}
-      {NAV.map(({ href, label, icon: Icon }) => (
+      {items.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}
