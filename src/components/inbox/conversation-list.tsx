@@ -7,12 +7,13 @@ import { Avatar, cx, relTime, useNow } from "@/components/ui";
 import { formatPhone } from "@/lib/format";
 import { SlaChip } from "./sla";
 
-export type InboxView = "mine" | "unassigned" | "all" | "bot" | "resolved";
+export type InboxView = "live" | "mine" | "unassigned" | "all" | "bot" | "resolved";
 
 export const VIEWS: { id: InboxView; label: string }[] = [
+  { id: "live", label: "All chats" },
   { id: "unassigned", label: "Queue" },
   { id: "mine", label: "Mine" },
-  { id: "all", label: "All open" },
+  { id: "all", label: "With agents" },
   { id: "bot", label: "With bot" },
   { id: "resolved", label: "Resolved" },
 ];
@@ -21,11 +22,13 @@ const priorityRank = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
 
 export function inView(c: Conversation, view: InboxView, me: string | undefined) {
   switch (view) {
+    case "live":
+      return c.status !== "resolved";
     case "mine":
       return (c.status === "open" || c.status === "pending") && c.assignee_id === me;
     case "unassigned":
       return c.status === "open" && !c.assignee_id;
-    case "all":
+    case "all": // "With agents"
       return c.status === "open" || c.status === "pending";
     case "bot":
       return c.status === "bot";

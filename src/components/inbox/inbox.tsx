@@ -13,7 +13,7 @@ import { NewConversation } from "./new-conversation";
 
 export function Inbox() {
   const { setViewing } = useWorkspace();
-  const [view, setView] = useState<InboxView>("unassigned");
+  const [view, setView] = useState<InboxView>("live");
   const [mvnoFilter, setMvnoFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   // Deep link: /inbox?c=<conversationId>. Inbox only renders client-side (behind the workspace gate).
