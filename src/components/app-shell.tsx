@@ -26,13 +26,43 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Admins and supervisors (on any MVNO) and super admins manage; plain agents don't. */
+function useAccess() {
+  const isSuper = useStore((s) => !!s.me?.is_platform_admin);
+  const isManager = useStore(
+    (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
+  );
+  return { isSuper, isManager };
+}
+
+const canSee = (item: { managersOnly?: boolean; superOnly?: boolean }, a: { isSuper: boolean; isManager: boolean }) =>
+  (!item.managersOnly || a.isManager) && (!item.superOnly || a.isSuper);
+
 function Gate({ children }: { children: ReactNode }) {
   const { ready } = useWorkspace();
+  const pathname = usePathname();
+  const access = useAccess();
   if (!ready) {
     return (
       <div className="grid h-full place-items-center text-sm text-muted">
         <div className="flex items-center gap-2">
           <span className="size-2 animate-pulse rounded-full bg-accent" /> Connecting to your inbox…
+        </div>
+      </div>
+    );
+  }
+  // Pages hidden from this role are also blocked when opened by URL (the APIs enforce it too).
+  const page = NAV.find((n) => pathname.startsWith(n.href));
+  if (page && !canSee(page, access)) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center">
+        <div className="card max-w-sm p-8">
+          <ShieldCheck className="mx-auto size-8 text-muted" />
+          <h1 className="mt-3 text-lg font-semibold">No access</h1>
+          <p className="mt-1 text-sm text-muted">{page.label} is available to supervisors and admins. Ask your admin if you need it.</p>
+          <Link href="/inbox" className="mt-5 inline-flex rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white">
+            Go to inbox
+          </Link>
         </div>
       </div>
     );
@@ -56,11 +86,11 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/tickets", label: "Tickets", icon: Ticket },
-  { href: "/dashboard", label: "Insights", icon: BarChart3 },
+  { href: "/dashboard", label: "Insights", icon: BarChart3, managersOnly: true },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/simulator", label: "Simulator", icon: Smartphone },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/simulator", label: "Simulator", icon: Smartphone, managersOnly: true },
+  { href: "/settings", label: "Settings", icon: Settings, managersOnly: true },
   { href: "/admin", label: "Admin", icon: ShieldCheck, superOnly: true },
 ] as { href: string; label: string; icon: typeof Inbox; managersOnly?: boolean; superOnly?: boolean }[];
 
@@ -95,11 +125,9 @@ function PillNav() {
     return n;
   });
 
-  const isManager = useStore(
-    (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
-  );
-  const isSuper = useStore((s) => !!s.me?.is_platform_admin);
-  const items = NAV.filter((n) => (!n.managersOnly || isManager) && (!n.superOnly || isSuper));
+  const access = useAccess();
+  const { isManager } = access;
+  const items = NAV.filter((n) => canSee(n, access));
 
   const active = items.find((n) => pathname.startsWith(n.href))?.href;
   useLayoutEffect(() => {

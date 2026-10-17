@@ -46,6 +46,16 @@ export async function requireConversation(id: string): Promise<{
   return { profile, conv, contact: contact as Contact, mvno };
 }
 
+/** Supervisors/admins of the MVNO, or super admins. */
+export async function requireMvnoManager(mvnoId: string) {
+  const { supabase, profile } = await requireAgent();
+  if (!profile.is_platform_admin) {
+    const { data } = await supabase.from("mvno_members").select("role").eq("mvno_id", mvnoId).eq("user_id", profile.id).maybeSingle();
+    if (data?.role !== "admin" && data?.role !== "supervisor") throw new HttpError(403, "Supervisors and admins only");
+  }
+  return { profile, mvno: await getMvno(mvnoId) };
+}
+
 export async function requireMvnoMember(mvnoId: string) {
   const { supabase, profile } = await requireAgent();
   const { data } = await supabase.from("mvnos").select("id").eq("id", mvnoId).maybeSingle();

@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { z } from "zod";
-import { errorResponse, requireMvnoMember } from "@/lib/inbox/auth";
+import { errorResponse, requireMvnoManager } from "@/lib/inbox/auth";
 import { processInbound } from "@/lib/bot/engine";
 import { runSerial } from "@/lib/queue";
 import type { InboundMessage } from "@/lib/whatsapp/types";
@@ -18,7 +18,7 @@ const Body = z.object({
 export async function POST(req: Request) {
   try {
     const body = Body.parse(await req.json());
-    const { mvno } = await requireMvnoMember(body.mvnoId);
+    const { mvno } = await requireMvnoManager(body.mvnoId);
 
     const msg: InboundMessage = {
       waMessageId: `sim.in.${crypto.randomUUID()}`,
