@@ -43,15 +43,21 @@ export async function eraseContact(contactId: string) {
 export async function autoCloseIdleBotChats() {
   const db = supabaseAdmin();
   const cutoff = new Date(Date.now() - 24 * 3_600_000).toISOString();
-  const { data } = await db.from("conversations").select("id, mvno_id").eq("status", "bot").lt("last_message_at", cutoff).limit(2000);
+  const { data } = await db.from("conversations").select("id, mvno_id, last_message_at").eq("status", "bot").lt("last_message_at", cutoff).limit(2000);
   const rows = data ?? [];
   for (let i = 0; i < rows.length; i += 200) {
     const batch = rows.slice(i, i + 200);
-    await db
-      .from("conversations")
-      .update({ status: "resolved", resolved_at: new Date().toISOString(), bot_state: {}, category: "inquiry" })
-      .in("id", batch.map((r) => r.id))
-      .eq("status", "bot");
+    // Resolved at the chat's last activity, not at cleanup time, so resolution-time
+    // averages reflect real conversations instead of the 24h idle wait.
+    await Promise.all(
+      batch.map((r) =>
+        db
+          .from("conversations")
+          .update({ status: "resolved", resolved_at: r.last_message_at, bot_state: {}, category: "inquiry" })
+          .eq("id", r.id)
+          .eq("status", "bot"),
+      ),
+    );
     await db.from("messages").insert(
       batch.map((r) => ({
         conversation_id: r.id,

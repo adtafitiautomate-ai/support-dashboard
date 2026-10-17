@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { formatMinutes } from "@/lib/format";
 
 export const REPORTS = {
   summary: "Executive summary",
@@ -54,6 +55,8 @@ const avg = (xs: (number | null)[]) => {
 };
 const pct = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : 0);
 const day = (iso: string) => iso.slice(0, 10);
+/** Summary tiles: "3h 44m (224 min)" so the unit is never ambiguous. */
+const withMinutes = (m: number | null) => (m === null ? null : `${formatMinutes(m)} (${Math.round(m)} min)`);
 const when = (iso: string | null) => (iso ? new Date(iso).toISOString().replace("T", " ").slice(0, 16) : null);
 
 function breached(c: Conv) {
@@ -96,8 +99,8 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
           ["Handed to agents", human.length],
           ["Resolved", cs.filter((c) => c.status === "resolved").length],
           ["Still open / pending", cs.filter((c) => c.status === "open" || c.status === "pending").length],
-          ["Avg first response (min)", avg(human.map((c) => mins(c.handoff_at, c.first_response_at)))],
-          ["Avg resolution time (min)", avg(cs.map((c) => mins(c.created_at, c.resolved_at)))],
+          ["Avg first response", withMinutes(avg(human.map((c) => mins(c.handoff_at, c.first_response_at))))],
+          ["Avg resolution time", withMinutes(avg(cs.map((c) => mins(c.created_at, c.resolved_at))))],
           ["SLA breaches", human.filter(breached).length],
           ["SLA met %", pct(human.length - human.filter(breached).length, human.length)],
           ["CSAT average (1–5)", avg(rated.map((c) => c.csat_score))],

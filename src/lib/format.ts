@@ -27,6 +27,16 @@ export function bundleSummary(b: { data_mb: number; minutes: number; sms: number
   return parts.join(" · ");
 }
 
+/** 224 → "3h 44m", 45 → "45m", 1500 → "1d 1h". */
+export function formatMinutes(mins: number | null | undefined) {
+  if (mins === null || mins === undefined || Number.isNaN(mins)) return "–";
+  const m = Math.round(mins);
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
+  const h = Math.floor((m % 1440) / 60);
+  return `${Math.floor(m / 1440)}d${h ? ` ${h}h` : ""}`;
+}
+
 export function initials(name: string | null | undefined) {
   return (name ?? "?")
     .split(/\s+/)
