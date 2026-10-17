@@ -39,6 +39,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static assets and the public WhatsApp webhook.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/whatsapp).*)"],
+  // Skip static assets, public files (images, icons, fonts…) and the public WhatsApp webhook.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/whatsapp|.*\\.(?:webp|png|jpe?g|gif|svg|ico|avif|woff2?|txt|xml)$).*)"],
 };
