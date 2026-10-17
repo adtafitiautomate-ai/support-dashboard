@@ -14,7 +14,7 @@ export interface Mvno {
   wallet_name: string;
   wallet_ussd: string | null;
   care_line: string | null;
-  ussd_codes: { self_service?: string; balance?: string; promos?: string };
+  ussd_codes: { self_service?: string; balance?: string; promos?: string; other_networks?: string };
   retention_days: number;
   privacy_notice: string | null;
   finance_emails: string[];

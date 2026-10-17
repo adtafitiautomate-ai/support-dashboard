@@ -67,7 +67,7 @@ How to reply:
 - Never ask for PINs, passwords or full ID numbers. Mobile money is ${mvno.wallet_name}${mvno.wallet_ussd ? ` (${mvno.wallet_ussd})` : ""}; prices are in ${mvno.currency}.
 - Other ways to reach us: ${mvno.care_line ?? "this WhatsApp chat"}.${
     Object.keys(mvno.ussd_codes ?? {}).length
-      ? `\n- USSD codes:${mvno.ussd_codes.balance ? ` check balance ${mvno.ussd_codes.balance};` : ""}${mvno.ussd_codes.self_service ? ` buy airtime/bundles or see your own number ${mvno.ussd_codes.self_service};` : ""}${mvno.ussd_codes.promos ? ` promo bundles ${mvno.ussd_codes.promos};` : ""}`
+      ? `\n- USSD codes:${mvno.ussd_codes.balance ? ` check balance ${mvno.ussd_codes.balance};` : ""}${mvno.ussd_codes.self_service ? ` buy airtime/bundles or see your own number ${mvno.ussd_codes.self_service};` : ""}${mvno.ussd_codes.promos ? ` promo bundles ${mvno.ussd_codes.promos};` : ""}${mvno.ussd_codes.other_networks ? ` buy from an MTN/Airtel line via ${mvno.ussd_codes.other_networks} (Airtime and Bundles, small fee);` : ""}`
       : ""
   }
 - Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost/stolen/damaged SIM: always call sim_replacement_help (agents cannot replace SIMs).

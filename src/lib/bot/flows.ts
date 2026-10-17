@@ -343,7 +343,11 @@ export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
         `${bundleSummary(b)}\n*Price: ${formatMoney(b.price, ctx.mvno.currency)}*\n\n` +
         `To buy it, dial ${code ?? "our self-service code"} on your phone` +
         (ctx.mvno.wallet_ussd ? `, or pay with ${ctx.mvno.wallet_name} on ${ctx.mvno.wallet_ussd}` : "") +
-        `. You can also buy at any of our agents.`,
+        "." +
+        (ctx.mvno.ussd_codes?.other_networks ? `
+From an MTN or Airtel line: dial ${ctx.mvno.ussd_codes.other_networks} → Airtime and Bundles → ${ctx.mvno.name} (small fee).` : "") +
+        `
+You can also buy at any of our agents.`,
       buttons: [
         { id: "menu:bundles", title: "Other bundles" },
         { id: "near:agent", title: "Nearest agent" },
