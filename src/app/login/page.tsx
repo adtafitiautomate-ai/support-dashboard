@@ -38,7 +38,7 @@ export default function LoginPage() {
           <span className="grid size-9 place-items-center rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
             <Headphones className="size-4.5" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">Relay</span>
+          <span className="text-[15px] font-semibold tracking-tight">Tuvugane</span>
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">

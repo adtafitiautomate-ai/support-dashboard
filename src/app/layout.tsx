@@ -6,7 +6,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Relay · WhatsApp CX",
+  title: "Tuvugane · WhatsApp CX",
   description: "Shared WhatsApp inbox and customer-care bot for MVNOs",
 };
 

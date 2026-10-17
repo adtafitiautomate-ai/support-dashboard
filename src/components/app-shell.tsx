@@ -70,7 +70,7 @@ function TopBar() {
         <span className="grid size-9 place-items-center rounded-xl bg-surface text-ink ring-1 ring-black/10 shadow-sm">
           <MessageCircle className="size-5" />
         </span>
-        <span className="hidden text-lg font-semibold tracking-tight sm:block">Relay</span>
+        <span className="hidden text-lg font-semibold tracking-tight sm:block">Tuvugane</span>
       </Link>
       <div className="flex flex-1 justify-center">
         <PillNav />

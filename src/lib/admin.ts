@@ -8,11 +8,11 @@ export async function requirePlatformAdmin() {
   return session;
 }
 
-/** Readable but strong temporary password, e.g. "Relay-k7Qm-9xTp-4Lw2". */
+/** Readable but strong temporary password, e.g. "Tuvugane-k7Qm-9xTp-4Lw2". */
 export function tempPassword() {
   const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const chunk = () => Array.from(crypto.randomBytes(4), (b) => alphabet[b % alphabet.length]).join("");
-  return `Relay-${chunk()}-${chunk()}-${chunk()}`;
+  return `Tuvugane-${chunk()}-${chunk()}-${chunk()}`;
 }
 
 export const slugify = (s: string) =>
