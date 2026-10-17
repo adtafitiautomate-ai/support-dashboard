@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertCircle, Bot, Check, CheckCheck, Clock, List, MapPin, StickyNote } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, ImageOff, List, MapPin, StickyNote } from "lucide-react";
 import type { Message } from "@/lib/types";
 import type { OutboundMessage } from "@/lib/whatsapp/types";
 import { cx } from "@/components/ui";
@@ -88,10 +89,15 @@ export function MessageBubble({ m, authorName }: { m: Message; authorName?: stri
             </span>
           </a>
         ) : (
-          <div className="text-[13.5px] break-words whitespace-pre-wrap">
-            {(m.type === "button_reply" || m.type === "list_reply") && <span className="mr-1 text-muted">↩︎</span>}
-            <WhatsAppText text={m.body ?? ""} />
-          </div>
+          <>
+            <Media m={m} />
+            {!(m.payload as { mediaId?: string }).mediaId || !/^\[\w+\]$/.test(m.body ?? "") ? (
+              <div className="text-[13.5px] break-words whitespace-pre-wrap">
+                {(m.type === "button_reply" || m.type === "list_reply") && <span className="mr-1 text-muted">↩︎</span>}
+                <WhatsAppText text={m.body ?? ""} />
+              </div>
+            ) : null}
+          </>
         )}
 
         {out?.type === "buttons" && (
@@ -146,6 +152,54 @@ function Ticks({ status }: { status: Message["status"] }) {
   if (status === "read") return <CheckCheck className="size-3.5 text-sky-500" />;
   if (status === "failed") return <AlertCircle className="size-3.5 text-danger" />;
   return null;
+}
+
+/** Customer photos, stickers, voice notes, videos and documents, served via /api/media/[id]. */
+function Media({ m }: { m: Message }) {
+  const p = m.payload as { mediaId?: string; filename?: string; mime?: string; size?: number };
+  const [failed, setFailed] = useState(false);
+  if (!p.mediaId || m.id.startsWith("tmp-")) return null;
+  const src = `/api/media/${m.id}`;
+
+  if (failed) {
+    return (
+      <div className="flex items-center gap-1.5 py-1 text-xs text-muted">
+        <ImageOff className="size-4" /> Media unavailable (expired on WhatsApp)
+      </div>
+    );
+  }
+  if (m.type === "image" || m.type === "sticker") {
+    return (
+      <a href={src} target="_blank" rel="noreferrer" className="-mx-1.5 mb-1 block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={m.type === "sticker" ? "Sticker" : "Photo from customer"}
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className={cx("rounded-lg object-cover", m.type === "sticker" ? "size-32 bg-transparent" : "max-h-80 w-full min-w-48 bg-black/5")}
+        />
+      </a>
+    );
+  }
+  if (m.type === "audio") {
+    return <audio controls preload="none" src={src} onError={() => setFailed(true)} className="my-1 h-10 w-64 max-w-full" />;
+  }
+  if (m.type === "video") {
+    return <video controls preload="metadata" src={src} onError={() => setFailed(true)} className="-mx-1.5 mb-1 max-h-80 w-full min-w-48 rounded-lg bg-black" />;
+  }
+  return (
+    <a href={`${src}?download`} className="my-1 flex items-center gap-2.5 rounded-lg bg-black/5 px-2.5 py-2 hover:bg-black/10">
+      <FileText className="size-5 shrink-0 text-muted" />
+      <span className="min-w-0">
+        <span className="block truncate text-[13px] font-medium">{p.filename ?? "Document"}</span>
+        <span className="block text-[11px] text-muted">
+          {(p.mime ?? "file").split("/").pop()?.toUpperCase()}
+          {p.size ? ` · ${Math.max(1, Math.round(p.size / 1024))} KB` : ""} · Download
+        </span>
+      </span>
+    </a>
+  );
 }
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });

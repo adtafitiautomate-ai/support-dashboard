@@ -34,7 +34,7 @@ export function forgetMvno(id: string) {
   tokenCache.delete(id);
 }
 
-async function waCredentials(mvno: Mvno) {
+export async function waCredentials(mvno: Mvno) {
   if (!mvno.wa_phone_number_id || mvno.wa_phone_number_id.startsWith("SIM-")) return null;
   let entry = tokenCache.get(mvno.id);
   if (!entry || Date.now() - entry.at > TTL) {
@@ -136,7 +136,7 @@ export async function recordInbound(conv: Conversation, msg: InboundMessage): Pr
       sender_type: "contact",
       type: msg.type,
       body,
-      payload: { replyId: msg.replyId, location: msg.location, mediaId: msg.mediaId },
+      payload: { replyId: msg.replyId, location: msg.location, mediaId: msg.mediaId, filename: msg.filename, mime: msg.mime },
       wa_message_id: msg.waMessageId,
       status: "received",
       created_at: msg.timestamp.toISOString(),

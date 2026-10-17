@@ -14,6 +14,7 @@ import {
   upsertContact,
 } from "@/lib/inbox/service";
 import * as F from "./flows";
+import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { runAgent, triage } from "./ai";
 
 /** Entry point for every inbound WhatsApp message, from Meta or the simulator. */
@@ -49,8 +50,17 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   if (!stored) return; // duplicate webhook delivery
   void markReadAndTyping(mvno, msg.waMessageId);
 
-  const ctx: F.FlowCtx = { mvno, conv, contact };
+  // Save photos / voice notes / documents in parallel with the reply, so media never slows the bot.
+  const mediaJob = msg.mediaId ? storeInboundMedia(stored).catch((e) => console.error("media", e)) : null;
+  try {
+    await respond({ mvno, conv, contact }, msg);
+  } finally {
+    await mediaJob;
+  }
+}
 
+async function respond(ctx: F.FlowCtx, msg: InboundMessage) {
+  const { conv } = ctx;
   // Humans own the conversation: the bot stays quiet.
   if (conv.status === "open" || conv.status === "pending") {
     if (conv.status === "pending") {

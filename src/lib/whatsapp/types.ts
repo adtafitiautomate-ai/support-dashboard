@@ -37,6 +37,8 @@ export interface InboundMessage {
   replyId?: string;
   location?: { lat: number; lng: number; name?: string; address?: string };
   mediaId?: string;
+  mime?: string;
+  filename?: string;
   caption?: string;
 }
 

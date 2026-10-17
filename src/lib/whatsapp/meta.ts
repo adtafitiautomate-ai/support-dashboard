@@ -156,11 +156,11 @@ interface MetaInboundMessage {
   };
   button?: { payload: string; text: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
-  image?: { id: string; caption?: string };
-  audio?: { id: string };
-  video?: { id: string; caption?: string };
-  document?: { id: string; caption?: string; filename?: string };
-  sticker?: { id: string };
+  image?: { id: string; caption?: string; mime_type?: string };
+  audio?: { id: string; mime_type?: string };
+  video?: { id: string; caption?: string; mime_type?: string };
+  document?: { id: string; caption?: string; filename?: string; mime_type?: string };
+  sticker?: { id: string; mime_type?: string };
 }
 
 export interface ParsedBatch {
@@ -212,11 +212,20 @@ function normalizeInbound(m: MetaInboundMessage, profileName?: string): InboundM
       };
     case "image":
     case "video":
+      return { ...base, type: m.type, mediaId: m[m.type]?.id, mime: m[m.type]?.mime_type, caption: m[m.type]?.caption, text: m[m.type]?.caption };
     case "document":
-      return { ...base, type: m.type, mediaId: m[m.type]?.id, caption: m[m.type]?.caption, text: m[m.type]?.caption };
+      return {
+        ...base,
+        type: "document",
+        mediaId: m.document?.id,
+        mime: m.document?.mime_type,
+        filename: m.document?.filename,
+        caption: m.document?.caption,
+        text: m.document?.caption ?? (m.document?.filename ? `📎 ${m.document.filename}` : undefined),
+      };
     case "audio":
     case "sticker":
-      return { ...base, type: m.type, mediaId: m[m.type]?.id };
+      return { ...base, type: m.type, mediaId: m[m.type]?.id, mime: m[m.type]?.mime_type };
     default:
       return { ...base, type: "unknown" };
   }
