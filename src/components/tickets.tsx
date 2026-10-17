@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bot, CheckCircle2, Clock3, Loader2, MessageSquareText, Search, Send, Sparkles, Ticket, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { upsertConversation, useStore } from "@/lib/store";
@@ -169,7 +170,7 @@ export function TicketsView() {
                         </div>
                       </td>
                       <td className="max-w-80 px-4 py-2.5">
-                        <div className="truncate">{r.subject ?? r.last_message_preview ?? "–"}</div>
+                        <div className="truncate">{r.subject ?? <span className="text-muted">{r.last_message_preview ?? "–"}</span>}</div>
                         {mvnos.length > 1 && <div className="text-[11px] text-muted">{s.mvnos.get(r.mvno_id)?.name}</div>}
                       </td>
                       <td className="px-4 py-2.5">
@@ -276,29 +277,54 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
   const timeline = (messages ?? []).filter((m) => m.type === "event" || m.is_internal);
   const breached = t?.sla_due_at && (t.first_response_at ? +new Date(t.first_response_at) : now) > +new Date(t.sla_due_at);
 
-  return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/15 backdrop-blur-[2px]" onClick={onClose}>
-      <aside onClick={(e) => e.stopPropagation()} className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
+  // Portal to <body>: the app's main area is its own stacking layer, so a drawer rendered
+  // inside it would sit under the top navbar.
+  return createPortal(
+    <div className="fixed inset-0 z-60 flex justify-end bg-zinc-900/20 backdrop-blur-[2px]" onClick={onClose}>
+      <aside
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Ticket details"
+        className="m-2 flex h-[calc(100%-1rem)] w-full max-w-140 flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5"
+      >
         {!t ? (
           <div className="grid flex-1 place-items-center">
             <Loader2 className="size-5 animate-spin text-muted" />
           </div>
         ) : (
           <>
-            <header className="border-b border-line px-5 py-4">
-              <div className="flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium text-muted">
-                    Ticket #{t.ticket_no} · {s.mvnos.get(t.mvno_id)?.name}
-                  </div>
-                  <h2 className="mt-0.5 text-lg leading-snug font-semibold">{t.subject ?? t.last_message_preview ?? "Conversation"}</h2>
+            <header className="border-b border-line px-6 pt-4 pb-5">
+              {/* Toolbar row: identity left, actions right, never overlapping the title */}
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold tabular-nums">#{t.ticket_no}</span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+                  <span className="size-2 rounded-full" style={{ background: s.mvnos.get(t.mvno_id)?.brand_color }} />
+                  {s.mvnos.get(t.mvno_id)?.name}
+                </span>
+                <Badge tone={prioTone[t.priority]} className="capitalize">
+                  {t.priority}
+                </Badge>
+                <div className="ml-auto flex items-center gap-1">
+                  <Link
+                    href={`/inbox?c=${t.id}`}
+                    className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-700"
+                  >
+                    <MessageSquareText className="size-3.5" /> Reply
+                  </Link>
+                  <button onClick={onClose} className="grid size-8 place-items-center rounded-full text-muted transition hover:bg-zinc-100 hover:text-ink" aria-label="Close" title="Close (Esc)">
+                    <X className="size-4.5" />
+                  </button>
                 </div>
-                <Link href={`/inbox?c=${t.id}`} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-black/10 hover:bg-zinc-50">
-                  <MessageSquareText className="size-3.5" /> Reply in inbox
-                </Link>
-                <button onClick={onClose} className="rounded-full p-1.5 text-muted hover:bg-zinc-100" aria-label="Close">
-                  <X className="size-5" />
-                </button>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <Avatar name={t.contact?.name ?? t.contact?.wa_id ?? "?"} size={44} />
+                <div className="min-w-0">
+                  <h2 className="truncate text-lg leading-tight font-semibold">{t.subject ?? `Chat with ${t.contact?.name ?? "customer"}`}</h2>
+                  <p className="truncate text-[13px] text-muted">
+                    {t.contact?.name ?? "Unknown"} · {t.contact ? formatPhone(t.contact.wa_id) : ""} · updated {relTime(t.last_message_at, now)} ago
+                  </p>
+                </div>
               </div>
 
               {/* Status */}
@@ -354,7 +380,7 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {/* Facts */}
               <div className="grid grid-cols-2 gap-2 text-[13px]">
-                <Fact label="Customer" value={t.contact?.name ?? "Unknown"} sub={t.contact ? formatPhone(t.contact.wa_id) : undefined} />
+                <Fact label="SLA due" value={fmt(t.sla_due_at)} sub={t.sla_due_at ? (breached ? "Breached" : "First reply target") : "Starts at handover"} tone={breached ? "red" : undefined} />
                 <Fact label="Category" value={t.category ?? "–"} sub={t.sentiment ? `Sentiment: ${t.sentiment}` : undefined} />
                 <Fact label="Opened" value={fmt(t.created_at)} sub={`${relTime(t.created_at, now)} ago`} />
                 <Fact label="Handed to team" value={fmt(t.handoff_at)} sub={t.handoff_at ? undefined : "Bot only so far"} />
@@ -392,7 +418,7 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
                   {timeline.length === 0 && <li className="text-xs text-muted">No activity yet.</li>}
                   {timeline.map((m) => (
                     <li key={m.id} className="relative">
-                      <span className={cx("absolute top-1.5 -left-[21px] size-2.5 rounded-full ring-4 ring-white", m.type === "event" ? "bg-zinc-400" : "bg-amber-400")} />
+                      <span className={cx("absolute top-1.5 -left-5.25 size-2.5 rounded-full ring-4 ring-white", m.type === "event" ? "bg-zinc-400" : "bg-amber-400")} />
                       <div className="text-[11px] text-muted">
                         {fmt(m.created_at)} · {m.type === "event" ? "Event" : `Note by ${m.sender_id ? (s.profiles.get(m.sender_id)?.full_name ?? "Agent") : "Pax (bot)"}`}
                       </div>
@@ -434,7 +460,8 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
           </>
         )}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

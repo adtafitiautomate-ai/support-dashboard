@@ -16,7 +16,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <WorkspaceProvider>
       <div className="relative flex h-dvh flex-col overflow-hidden">
         <TopBar />
-        <main className="relative z-10 min-h-0 flex-1">
+        {/* No z-index here: modals/drawers inside pages must be able to cover the top bar. */}
+        <main className="relative min-h-0 flex-1">
           <Gate>{children}</Gate>
         </main>
       </div>
