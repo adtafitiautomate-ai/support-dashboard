@@ -160,39 +160,62 @@ const CATEGORY_LABEL: Record<Bundle["category"], string> = {
 /** Step 1: pick a category (WhatsApp lists hold max 10 rows, catalogues are bigger). */
 export async function showBundles(ctx: FlowCtx) {
   const bundles = await listBundles(ctx.mvno.id);
-  const cats = [...new Set(bundles.map((b) => b.category))];
+  if (!bundles.length) return showBundlesFromKnowledge(ctx);
+  const cats = [...new Set(bundles.map((b) => (b.category === "deal" ? "combo" : b.category)))];
   if (bundles.length <= 10 || cats.length < 2) return showBundleCategory(ctx, null);
   await setState(ctx, { flow: "bundle" });
+  const labels = { data: "📶 Data", voice: "📞 Voice", combo: "🎁 Combos & deals" } as const;
   await say(ctx, {
     type: "buttons",
-    body: "What kind of bundle would you like? 👇 Bundles activate instantly after payment.",
-    buttons: [
-      { id: "bcat:data", title: "📶 Data" },
-      { id: "bcat:voice", title: "📞 Voice" },
-      { id: "bcat:combo", title: "🎁 Combos & deals" },
-    ],
+    body: "What kind of bundle would you like? 👇",
+    buttons: (["data", "voice", "combo"] as const).filter((c) => cats.includes(c)).map((c) => ({ id: `bcat:${c}`, title: labels[c] })),
   });
 }
 
-/** Step 2: list the bundles in one category (null = all). */
-export async function showBundleCategory(ctx: FlowCtx, category: Bundle["category"] | null) {
+const PAGE = 9; // WhatsApp lists hold 10 rows: 9 bundles + "More bundles…"
+
+/** Step 2: list the bundles in one category (null = all), paginated. */
+export async function showBundleCategory(ctx: FlowCtx, category: Bundle["category"] | null, page = 0) {
   const all = await listBundles(ctx.mvno.id);
+  if (!all.length) return showBundlesFromKnowledge(ctx);
   const bundles = all.filter((b) => !category || b.category === category || (category === "combo" && b.category === "deal"));
   await setState(ctx, { flow: "bundle" });
-  const rows = (list: Bundle[]) =>
-    list.map((b) => ({
-      id: `bundle:${b.id}`,
-      title: b.name.slice(0, 24),
-      description: `${formatMoney(b.price, ctx.mvno.currency)} · ${bundleSummary(b)}`,
-    }));
-  const groups = [...new Set(bundles.map((b) => b.category))];
+  const slice = bundles.slice(page * PAGE, page * PAGE + PAGE);
+  const more = bundles.length > (page + 1) * PAGE;
+  const toRow = (b: Bundle) => ({
+    id: `bundle:${b.id}`,
+    title: b.name.slice(0, 24),
+    description: `${formatMoney(b.price, ctx.mvno.currency)} · ${bundleSummary(b)}`.slice(0, 72),
+  });
+  const groups = [...new Set(slice.map((b) => b.category))];
+  const sections = groups.map((g) => ({ title: CATEGORY_LABEL[g], rows: slice.filter((b) => b.category === g).map(toRow) }));
+  if (more) sections.push({ title: "More", rows: [{ id: `bcat:${category ?? "all"}:${page + 1}`, title: "More bundles…", description: `${bundles.length - (page + 1) * PAGE} more` }] });
   const ussd = bundles.find((b) => b.ussd)?.ussd;
   await say(ctx, {
     type: "list",
-    body: `Pick a bundle 👇${ussd ? `\nYou can also dial ${ussd}.` : ""}`,
+    body: `Pick a bundle 👇${page ? ` (page ${page + 1})` : ""}${ussd ? `\nYou can also dial ${ussd}.` : ""}`,
     button: "See bundles",
-    sections: groups.map((g) => ({ title: CATEGORY_LABEL[g], rows: rows(bundles.filter((b) => b.category === g)) })),
+    sections,
   });
+}
+
+/** No bundle catalogue for this MVNO: answer from its knowledge base instead of an empty list. */
+async function showBundlesFromKnowledge(ctx: FlowCtx) {
+  const { data } = await supabaseAdmin().rpc("search_kb", { p_mvno: ctx.mvno.id, p_query: "bundle bundles data voice minutes price prices", p_limit: 4 });
+  const articles = (data ?? []) as { title: string; body: string }[];
+  if (!articles.length) {
+    await say(ctx, {
+      type: "buttons",
+      body: "Our bundle list isn't available here yet. Our team can tell you the current bundles and prices.",
+      buttons: [
+        { id: "menu:human", title: "Talk to an agent" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+    return;
+  }
+  const text = articles.map((a) => `*${a.title.replace(/\?$/, "")}*\n${a.body}`).join("\n\n");
+  await say(ctx, { type: "text", text: text.length > 3800 ? `${text.slice(0, 3800)}…` : text });
 }
 
 /** Customer asked about privacy: show the notice and offer a deletion request. */

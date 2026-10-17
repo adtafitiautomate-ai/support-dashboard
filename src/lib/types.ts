@@ -120,7 +120,7 @@ export interface Bundle {
   data_mb: number;
   minutes: number;
   sms: number;
-  validity_days: number;
+  validity_days: number | null; // null = not published, 0 = no expiry
   active: boolean;
   sort: number;
 }

@@ -15,12 +15,15 @@ export function formatMoney(amount: number, currency: string) {
   return `${currency} ${Number(amount).toLocaleString("en", { maximumFractionDigits: 2 })}`;
 }
 
-export function bundleSummary(b: { data_mb: number; minutes: number; sms: number; validity_days: number }) {
+export function bundleSummary(b: { data_mb: number; minutes: number; sms: number; validity_days: number | null }) {
   const parts: string[] = [];
   if (b.data_mb) parts.push(formatData(b.data_mb));
-  if (b.minutes) parts.push(b.minutes >= 99999 ? "unlimited min" : `${b.minutes} min`);
+  if (b.minutes) parts.push(b.minutes >= 99999 ? "unlimited min" : `${b.minutes.toLocaleString("en")} min`);
   if (b.sms) parts.push(`${b.sms} SMS`);
-  parts.push(b.validity_days === 1 ? "24h" : `${b.validity_days} days`);
+  // null = validity not published (say nothing rather than guess); 0 = no expiry.
+  if (b.validity_days === 0) parts.push("no expiry");
+  else if (b.validity_days === 1) parts.push("24h");
+  else if (b.validity_days) parts.push(`${b.validity_days} days`);
   return parts.join(" · ");
 }
 

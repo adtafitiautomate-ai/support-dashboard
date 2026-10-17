@@ -126,8 +126,8 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
     switch (kind) {
       case "menu":
         return menuAction(ctx, a);
-      case "bcat":
-        return F.showBundleCategory(ctx, a as "data" | "voice" | "combo");
+      case "bcat": // bcat:<category|all>[:<page>]
+        return F.showBundleCategory(ctx, a === "all" ? null : (a as "data" | "voice" | "combo"), Number(b) || 0);
       case "bundle":
         return F.confirmBundle(ctx, a);
       case "esim":

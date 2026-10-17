@@ -36,6 +36,8 @@ export function toMetaPayload(to: string, msg: OutboundMessage): Record<string, 
           return { ...s, rows };
         })
         .filter((s) => s.rows.length);
+      // An empty list is rejected by WhatsApp (#131009): send the text instead.
+      if (!sections.length) return { ...base, type: "text", text: { body: clip(msg.body, 4096), preview_url: false } };
       return {
         ...base,
         type: "interactive",
