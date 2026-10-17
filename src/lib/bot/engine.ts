@@ -56,7 +56,8 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   const mediaJob = msg.mediaId ? storeInboundMedia(stored).catch((e) => console.error("media", e)) : null;
   try {
     const ctx: F.FlowCtx = { mvno, conv, contact };
-    if (/^(privacy|data|faragha)$/i.test(msg.text?.trim() ?? "") && conv.status === "bot") {
+    // Typed keyword only (never a button tap); "data" alone means data bundles, not privacy.
+    if (!msg.replyId && /^(privacy|my data|delete my data|faragha)$/i.test(msg.text?.trim() ?? "") && conv.status === "bot") {
       await F.showPrivacy(ctx);
     } else {
       await respond(ctx, msg);
