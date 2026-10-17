@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
+import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -91,6 +91,7 @@ const NAV = [
   { href: "/dashboard", label: "Insights", icon: BarChart3, managersOnly: true },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
+  { href: "/audience", label: "Audience", icon: Megaphone, managersOnly: true },
   { href: "/simulator", label: "Simulator", icon: Smartphone, adminsOnly: true },
   { href: "/settings", label: "Settings", icon: Settings, adminsOnly: true },
   { href: "/team", label: "Team", icon: Users, adminsOnly: true },

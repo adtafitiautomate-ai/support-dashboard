@@ -32,6 +32,26 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   }
 
   // CSAT answer for a conversation that was just resolved.
+  // Campaign opt-out / opt-in (typed keyword only). Support chats keep working either way.
+  const word = msg.replyId ? "" : (msg.text?.trim().toLowerCase() ?? "");
+  const optOut = /^(stop|unsubscribe|stop promotions)$/.test(word);
+  const optIn = !!contact.opted_out_at && /^(start|subscribe)$/.test(word);
+  if (optOut || optIn) {
+    const conv = await getActiveConversation(mvno, contact);
+    if (!(await recordInbound(conv, msg))) return;
+    await supabaseAdmin().from("contacts").update({ opted_out_at: optOut ? new Date().toISOString() : null }).eq("id", contact.id);
+    await F.say(
+      { mvno, conv, contact },
+      {
+        type: "text",
+        text: optOut
+          ? `Done ✅ You won't receive promotional messages from ${mvno.name}. You can still chat with us for help anytime. Reply START to get offers again.`
+          : `Welcome back 🎉 You'll receive ${mvno.name} offers again. Reply STOP anytime to opt out.`,
+      },
+    );
+    return;
+  }
+
   // Accepts the button tap or the same answer typed ("great", "ok", "poor"...).
   const typed = msg.text?.trim().toLowerCase().replace(/[^\p{L}\s]/gu, "").trim() ?? "";
   const typedScore = /^(great|excellent|good|very good)$/.test(typed) ? 5 : /^(okay|ok|fine|average)$/.test(typed) ? 3 : /^(poor|bad|terrible)$/.test(typed) ? 1 : 0;

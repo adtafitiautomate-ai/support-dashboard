@@ -19,6 +19,7 @@ export interface Mvno {
   privacy_notice: string | null;
   finance_emails: string[];
   alert_emails: string[];
+  number_prefixes: string[];
   wa_phone_number_id: string | null;
   wa_display_number: string | null;
   bot_name: string;
@@ -56,6 +57,7 @@ export interface Contact {
   notes: string | null;
   last_location: { lat: number; lng: number; at: string } | null;
   privacy_notice_sent_at?: string | null;
+  opted_out_at?: string | null;
   created_at: string;
   last_seen_at: string | null;
 }
