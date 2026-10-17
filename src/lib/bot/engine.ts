@@ -198,7 +198,9 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
 
   const history = await recentMessages(ctx.conv.id, 20);
   const isFirst = history.filter((m) => m.direction === "out" && !m.is_internal).length === 0;
-  if (isFirst && isGreeting(text)) return F.showMenu(ctx, `${ctx.mvno.greeting}\n\nWhat can I help you with today?`);
+  // A plain greeting ("Hi", "Asalam alaikum") always gets the MVNO's configured greeting + menu,
+  // never an improvised AI reply. Greetings with a question attached still go to the AI.
+  if (isGreeting(text) && (isFirst || isJustGreeting(text))) return F.showMenu(ctx, greetingReply(ctx.mvno.greeting, text));
 
   if (!text) {
     return F.say(ctx, {
@@ -345,8 +347,42 @@ async function finishFailedTxn(ctx: F.FlowCtx, txnId: string | null) {
 
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);
 // English, Luganda, Runyankole/Rukiga and Swahili greetings.
+// English, Luganda, Runyankole/Rukiga, Swahili and Islamic greetings
+// (salam / salaam / asalam / assalamu alaikum / as-salamu alaykum …).
+const SALAM = /^(a?s+[-\s']?)?s?a?l+a+m(u|o)?\b/i;
 const isGreeting = (t: string) =>
+  SALAM.test(t) ||
   /^(hi+|hey|hello|hallo|good (morning|afternoon|evening)|oli otya|gyebale|ki kati|wasuze otya|agandi|oraire ota|habari|mambo|jambo)\b/i.test(t);
+
+/** The whole message is just a greeting (no question or request attached). */
+const isJustGreeting = (t: string) =>
+  t.split(/\s+/).length <= 7 && !/[?]|\b(need|want|help|bundle|data|balance|airtime|sim|agent|how|what|where|why|when|njagala|nataka)\b/i.test(t);
+
+/**
+ * Builds the reply to a greeting from the MVNO's configured greeting:
+ * - salam → "Wa alaikum assalam…" (never a second salam)
+ * - "Hello"/"Hi"/other greeting → mirror the customer's own greeting word
+ * The rest of the configured greeting (e.g. "I'm Hilal, Salamtel's virtual assistant…") follows.
+ */
+function greetingReply(greeting: string, text: string) {
+  const t = text.trim();
+  const configured = greeting.trim();
+  const opensWithSalam = SALAM.test(configured);
+  let opening: string | null = null;
+  if (SALAM.test(t)) opening = "Wa alaikum assalam wa rahmatullahi wa barakatuh!";
+  else if (opensWithSalam) {
+    // Mirror e.g. "Hello", "Hi", "Good morning", "Oli otya".
+    const said = t.replace(/[!.,]+$/, "").split(/\s+/).slice(0, /^good\b/i.test(t) ? 2 : /^(oli|ki|wasuze)\b/i.test(t) ? 2 : 1).join(" ");
+    opening = `${said.charAt(0).toUpperCase()}${said.slice(1).toLowerCase()}!`;
+  }
+  let reply = configured;
+  if (opening) {
+    reply = opensWithSalam
+      ? configured.replace(/^[^!.?]*[!.?]\s*/, `${opening} `) // replace the configured opening salam
+      : `${opening} ${configured}`;
+  }
+  return /\?\s*$/.test(reply) ? reply : `${reply}\n\nHow can I help you today?`;
+}
 
 /** Used when no Claude API key is configured. */
 async function keywordFallback(ctx: F.FlowCtx, text: string) {
