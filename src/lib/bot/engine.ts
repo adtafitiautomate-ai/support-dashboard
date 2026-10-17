@@ -32,10 +32,15 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   }
 
   // CSAT answer for a conversation that was just resolved.
-  if (msg.replyId?.startsWith("csat:")) {
+  // Accepts the button tap or the same answer typed ("great", "ok", "poor"...).
+  const typed = msg.text?.trim().toLowerCase().replace(/[^\p{L}\s]/gu, "").trim() ?? "";
+  const typedScore = /^(great|excellent|good|very good)$/.test(typed) ? 5 : /^(okay|ok|fine|average)$/.test(typed) ? 3 : /^(poor|bad|terrible)$/.test(typed) ? 1 : 0;
+  if (msg.replyId?.startsWith("csat:") || (!msg.replyId && typedScore)) {
     const pending = await getCsatPending(contact);
+    // A stale rating tap (survey expired or already answered) must never restart the bot.
+    if (!pending && msg.replyId?.startsWith("csat:")) return;
     if (pending) {
-      const score = Number(msg.replyId.split(":")[1]);
+      const score = msg.replyId?.startsWith("csat:") ? Number(msg.replyId.split(":")[1]) : typedScore;
       await recordInbound(pending, msg);
       const conv = await updateConversation(pending.id, { csat_score: score, bot_state: {}, unread_count: 0 });
       await F.say(
@@ -369,7 +374,17 @@ async function botResolve(ctx: F.FlowCtx, summary: string, category: string) {
     subject: ctx.conv.subject ?? (summary ? summary.slice(0, 80) : "Inquiry answered by bot"),
     ai_summary: ctx.conv.ai_summary ?? (summary || null),
   });
-  await resolveConversation(ctx.mvno, ctx.conv, ctx.contact, null, true, "Resolved by bot (inquiry answered)");
+  // Only one survey per day: a customer who already rated just gets a goodbye.
+  const { count } = await supabaseAdmin()
+    .from("conversations")
+    .select("id", { count: "exact", head: true })
+    .eq("contact_id", ctx.contact.id)
+    .not("csat_score", "is", null)
+    .gte("resolved_at", new Date(Date.now() - 86_400_000).toISOString());
+  const askCsat = !count;
+  // Keep ctx in sync so later writes in this turn don't overwrite the resolved state.
+  ctx.conv = await resolveConversation(ctx.mvno, ctx.conv, ctx.contact, null, askCsat, "Resolved by bot (inquiry answered)");
+  if (!askCsat) await F.say(ctx, { type: "text", text: `Thanks for chatting with ${ctx.mvno.name}! Have a great day 💜` });
 }
 
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);
