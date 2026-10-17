@@ -2,13 +2,20 @@ import { z } from "zod";
 import { errorResponse, HttpError } from "@/lib/inbox/auth";
 import { requirePlatformAdmin, tempPassword } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { toLoginEmail } from "@/lib/login";
 
 const Role = z.enum(["admin", "supervisor", "agent"]);
 
 const Body = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("create"),
-    email: z.email(),
+    // Real email, or a username (letters, digits, . _ -) mapped to an internal address.
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .refine((v) => (v.includes("@") ? z.email().safeParse(v).success : /^[a-z0-9._-]{3,32}$/.test(v)), "Enter an email, or a username of 3–32 letters/digits")
+      .transform(toLoginEmail),
     full_name: z.string().trim().min(2).max(80),
     password: z.string().min(10).max(72).optional(), // omitted → generated
     mvno_id: z.guid().optional(),

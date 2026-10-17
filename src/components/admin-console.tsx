@@ -6,8 +6,10 @@ import { patch } from "@/lib/store";
 import type { MemberRole, Mvno } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { api, Avatar, Badge, cx, relTime, useNow } from "./ui";
+import { RenewToken, TokenCountdown, type TokenInfo } from "./admin-token";
+import { displayLogin } from "@/lib/login";
 
-type AdminMvno = Mvno & { connected: boolean; members: number; open: number; with_bot: number };
+type AdminMvno = Mvno & { connected: boolean; members: number; open: number; with_bot: number; token: TokenInfo | null };
 type AdminUser = {
   id: string;
   full_name: string;
@@ -30,6 +32,7 @@ export function AdminConsole() {
   const [editing, setEditing] = useState<Partial<AdminMvno> | null>(null);
   const [creatingUser, setCreatingUser] = useState<{ mvno_id?: string } | null>(null);
   const [secret, setSecret] = useState<{ email: string; password: string; title: string } | null>(null);
+  const [renewing, setRenewing] = useState<AdminMvno | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/admin/overview");
@@ -136,6 +139,7 @@ export function AdminConsole() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {m.connected ? <Badge tone="green">WhatsApp {m.wa_display_number}</Badge> : <Badge tone="amber">WhatsApp not connected (simulator)</Badge>}
+                {m.connected && <TokenCountdown token={m.token} onRenew={() => setRenewing(m)} />}
                 <button onClick={() => setCreatingUser({ mvno_id: m.id })} className="ml-auto flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
                   <UserPlus className="size-3.5" /> Add user
                 </button>
@@ -191,6 +195,17 @@ export function AdminConsole() {
         />
       )}
       {secret && <SecretDialog {...secret} onClose={() => setSecret(null)} />}
+      {renewing && (
+        <RenewToken
+          mvnoId={renewing.id}
+          mvnoName={renewing.name}
+          onClose={() => setRenewing(null)}
+          onSaved={async () => {
+            setRenewing(null);
+            await load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -229,7 +244,7 @@ function UserRow({
               {u.full_name}
               {u.is_platform_admin && <Badge tone="violet">Super admin</Badge>}
             </div>
-            <div className="text-xs text-muted">{u.email}</div>
+            <div className="text-xs text-muted">{displayLogin(u.email)}</div>
           </div>
         </div>
       </td>
@@ -294,7 +309,7 @@ function UserRow({
             disabled={busy}
             onClick={async () => {
               const r = await run({ action: "reset_password" });
-              if (r?.password) onSecret({ email: u.email, password: r.password, title: "Password reset" });
+              if (r?.password) onSecret({ email: displayLogin(u.email), password: r.password, title: "Password reset" });
             }}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-ink"
           >
@@ -477,7 +492,7 @@ function CreateUser({
         role: f.role,
         platform_admin: f.platform_admin,
       });
-      onCreated(r.email, r.password);
+      onCreated(displayLogin(r.email), r.password);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -490,8 +505,8 @@ function CreateUser({
         <L label="Full name">
           <input required className={field} value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
         </L>
-        <L label="Work email (their username)">
-          <input required type="email" className={field} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+        <L label="Username or email" hint="A plain username (e.g. sophie) signs in without an email address.">
+          <input required autoCapitalize="none" spellCheck={false} className={field} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
         </L>
         <div className="grid grid-cols-2 gap-3">
           <L label="MVNO">
@@ -530,7 +545,7 @@ function CreateUser({
 
 function SecretDialog({ email, password, title, onClose }: { email: string; password: string; title: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const text = `Login: ${typeof window !== "undefined" ? window.location.origin : ""}/login\nEmail: ${email}\nPassword: ${password}`;
+  const text = `Login: ${typeof window !== "undefined" ? window.location.origin : ""}/login\nUsername: ${email}\nPassword: ${password}`;
   return (
     <Modal title={title} onClose={onClose}>
       <p className="mb-3 text-sm text-muted">Share these credentials securely. The password is shown only once.</p>

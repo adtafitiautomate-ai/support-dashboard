@@ -3,6 +3,7 @@ import { errorResponse, HttpError } from "@/lib/inbox/auth";
 import { requirePlatformAdmin, slugify } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { forgetMvno } from "@/lib/inbox/service";
+import { setMvnoToken } from "@/lib/wa-tokens";
 
 const Fields = z.object({
   name: z.string().trim().min(2).max(60),
@@ -23,6 +24,7 @@ const Fields = z.object({
 const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), mvno: Fields }),
   z.object({ action: z.literal("update"), id: z.guid(), mvno: Fields.partial() }),
+  z.object({ action: z.literal("set_token"), id: z.guid(), token: z.string().trim().min(20).max(2000) }),
 ]);
 
 const DEFAULT_REPLIES = [
@@ -58,6 +60,16 @@ export async function POST(req: Request) {
       if (error) throw error;
       await db.from("canned_responses").insert(DEFAULT_REPLIES.map(([shortcut, title, text]) => ({ mvno_id: data.id, shortcut, title, body: text })));
       return Response.json({ mvno: data });
+    }
+
+    if (body.action === "set_token") {
+      try {
+        const result = await setMvnoToken(body.id, body.token);
+        forgetMvno(body.id);
+        return Response.json(result);
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : "Could not save token");
+      }
     }
 
     const { data, error } = await db.from("mvnos").update(body.mvno).eq("id", body.id).select().single();

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, ShieldCheck, Ticket, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
+import { ChangePassword } from "./change-password";
+import { BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -222,6 +223,7 @@ function ProfileMenu() {
   const me = useStore((s) => s.me);
   const roles = useStore((s) => s.memberships.filter((m) => m.user_id === s.me?.id).length);
   const [open, setOpen] = useState(false);
+  const [changingPw, setChangingPw] = useState(false);
   const ref = useClickAway(open, () => setOpen(false));
   if (!me) return <div className="h-9 w-40" />;
 
@@ -261,6 +263,15 @@ function ProfileMenu() {
           ))}
           <div className="my-1 border-t border-line" />
           <button
+            onClick={() => {
+              setOpen(false);
+              setChangingPw(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm text-muted hover:bg-surface-2 hover:text-ink"
+          >
+            <KeyRound className="size-4" /> Change password
+          </button>
+          <button
             onClick={async () => {
               await supabaseBrowser().from("profiles").update({ status: "offline" }).eq("id", me.id);
               await supabaseBrowser().auth.signOut();
@@ -272,6 +283,7 @@ function ProfileMenu() {
           </button>
         </div>
       )}
+      {changingPw && <ChangePassword onClose={() => setChangingPw(false)} />}
     </div>
   );
 }

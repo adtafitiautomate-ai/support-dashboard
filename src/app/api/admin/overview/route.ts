@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import { errorResponse } from "@/lib/inbox/auth";
 import { requirePlatformAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { tokenStatus } from "@/lib/wa-tokens";
 
 /** Super admin: every MVNO with headline numbers, and every user with email, roles and status. */
 export async function GET() {
@@ -30,10 +31,16 @@ export async function GET() {
       };
     });
 
+    const isConnected = (m: { wa_phone_number_id: string | null }) => !!m.wa_phone_number_id && !m.wa_phone_number_id.startsWith("SIM-");
+    const tokens = new Map(
+      await Promise.all((mvnos.data ?? []).filter(isConnected).map(async (m) => [m.id, await tokenStatus(m.id)] as const)),
+    );
+
     return Response.json({
       mvnos: (mvnos.data ?? []).map((m) => ({
         ...m,
-        connected: !!m.wa_phone_number_id && !String(m.wa_phone_number_id).startsWith("SIM-"),
+        connected: isConnected(m),
+        token: tokens.get(m.id) ?? null,
         members: (members.data ?? []).filter((x) => x.mvno_id === m.id).length,
         open: (convs.data ?? []).filter((c) => c.mvno_id === m.id && c.status !== "bot").length,
         with_bot: (convs.data ?? []).filter((c) => c.mvno_id === m.id && c.status === "bot").length,

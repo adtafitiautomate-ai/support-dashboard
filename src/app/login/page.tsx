@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowRight, Headphones, Loader2, Lock, Mail } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { toLoginEmail } from "@/lib/login";
 
 const DEMO = [
   { email: "admin@demo.test", label: "Platform admin" },
@@ -20,7 +21,7 @@ export default function LoginPage() {
     e?.preventDefault();
     setBusy(true);
     setError(null);
-    const { error } = await supabaseBrowser().auth.signInWithPassword(creds ?? { email, password });
+    const { error } = await supabaseBrowser().auth.signInWithPassword(creds ?? { email: toLoginEmail(email), password });
     if (error) {
       setError(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
       setBusy(false);
@@ -47,16 +48,18 @@ export default function LoginPage() {
 
           <form onSubmit={signIn} className="mt-8 space-y-4">
             <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium">Email</span>
+              <span className="mb-1.5 block text-[13px] font-medium">Email or username</span>
               <span className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 transition focus-within:border-zinc-900 focus-within:ring-4 focus-within:ring-zinc-900/5 dark:border-line dark:bg-surface-2">
                 <Mail className="size-4 text-zinc-400" />
                 <input
-                  type="email"
+                  type="text"
                   required
-                  autoComplete="email"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@paxtel.com"
+                  placeholder="e.g. sophie or you@company.com"
                   className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-zinc-400"
                 />
               </span>
