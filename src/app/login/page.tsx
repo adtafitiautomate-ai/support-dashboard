@@ -44,7 +44,7 @@ export default function LoginPage() {
 
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight">Welcome back</h1>
-          <p className="mt-1.5 text-sm text-muted">Sign in to the PaxTel customer care workspace.</p>
+          <p className="mt-1.5 text-sm text-muted">Sign in to your customer care workspace.</p>
 
           <form onSubmit={signIn} className="mt-8 space-y-4">
             <label className="block">
@@ -107,18 +107,18 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="text-xs text-zinc-400">PaxTel · Better with us</p>
+        <p className="text-xs text-zinc-400">Tuvugane · Customer care on WhatsApp</p>
       </section>
 
       {/* Photo */}
       <aside className="relative m-3 hidden overflow-hidden rounded-[1.75rem] lg:block">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/backdrop.webp" alt="" className="absolute inset-0 size-full object-cover" />
+        <img src="/login-art.webp" alt="" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent" />
         <div className="absolute inset-x-10 bottom-10 text-white">
-          <p className="max-w-md text-[26px] leading-snug font-semibold tracking-tight">“Connectivity built around people.”</p>
+          <p className="max-w-md text-[26px] leading-snug font-semibold tracking-tight">Every customer conversation, in one place.</p>
           <p className="mt-3 max-w-md text-sm text-white/75">
-            Every WhatsApp conversation, bot answer and handover in one live workspace for the PaxTel care team.
+            An AI WhatsApp assistant, shared team inbox, tickets and live insights, so your customers get fast answers and your agents never miss a chat.
           </p>
         </div>
       </aside>
