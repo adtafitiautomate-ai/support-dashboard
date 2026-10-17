@@ -146,3 +146,37 @@ export async function api<T = unknown>(url: string, body: unknown): Promise<T> {
   if (!res.ok) throw new Error((json as { error?: string }).error ?? `Request failed (${res.status})`);
   return json as T;
 }
+
+/** Compact pager: "‹ 1 2 3 … 9 ›" with a "Showing 7–12 of 40" label. */
+export function Pager({ page, pageSize, total, onPage, label = "items" }: { page: number; pageSize: number; total: number; onPage: (p: number) => void; label?: string }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  const from = page * pageSize + 1;
+  const to = Math.min(total, (page + 1) * pageSize);
+  // Window of page numbers around the current page, with first/last always shown.
+  const nums = [...new Set([0, page - 1, page, page + 1, pages - 1])].filter((n) => n >= 0 && n < pages).sort((a, b) => a - b);
+  const btn = "grid h-8 min-w-8 place-items-center rounded-lg px-2 text-xs font-medium transition disabled:opacity-40";
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-3">
+      <span className="text-xs text-muted">
+        Showing {from}–{to} of {total} {label}
+      </span>
+      <div className="ml-auto flex items-center gap-1">
+        <button className={cx(btn, "hover:bg-white")} disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page">
+          ‹
+        </button>
+        {nums.map((n, i) => (
+          <span key={n} className="flex items-center gap-1">
+            {i > 0 && n - nums[i - 1] > 1 && <span className="px-1 text-xs text-muted">…</span>}
+            <button className={cx(btn, n === page ? "bg-zinc-900 text-white" : "hover:bg-white")} onClick={() => onPage(n)} aria-current={n === page ? "page" : undefined}>
+              {n + 1}
+            </button>
+          </span>
+        ))}
+        <button className={cx(btn, "hover:bg-white")} disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page">
+          ›
+        </button>
+      </div>
+    </div>
+  );
+}

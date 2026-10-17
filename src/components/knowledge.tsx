@@ -8,7 +8,7 @@ import type { KbArticle } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { LocationsPanel } from "./locations";
 import { useWorkspace } from "./workspace";
-import { Badge, Button, cx, relTime, useNow } from "./ui";
+import { Badge, Button, cx, Pager, relTime, useNow } from "./ui";
 
 interface KbSource {
   id: string;
@@ -67,6 +67,14 @@ export function KnowledgeView() {
         (!term || `${a.title} ${a.body} ${a.tags.join(" ")}`.toLowerCase().includes(term)),
     );
   }, [articles, filter, q]);
+
+  // 6 articles per page; the page resets when the filter, search or MVNO changes.
+  const PER_PAGE = 6;
+  const listKey = `${mvnoId}|${filter}|${q}`;
+  const [pageState, setPageState] = useState({ key: listKey, page: 0 });
+  const pageCount = Math.max(1, Math.ceil(shown.length / PER_PAGE));
+  const page = pageState.key === listKey ? Math.min(pageState.page, pageCount - 1) : 0;
+  const pageItems = shown.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
 
   const sourceName = (id: string | null) => sources.find((s) => s.id === id)?.name;
 
@@ -251,7 +259,7 @@ export function KnowledgeView() {
 
           <ul className="flex-1 space-y-2 overflow-y-auto">
             {shown.length === 0 && <li className="py-16 text-center text-sm text-muted">No articles match.</li>}
-            {shown.map((a) => (
+            {pageItems.map((a) => (
               <li key={a.id} className="group rounded-2xl bg-surface-2 p-3">
                 <div className="flex items-start gap-2">
                   <button className="min-w-0 flex-1 text-left" onClick={() => setEditing(a)}>
@@ -284,6 +292,7 @@ export function KnowledgeView() {
               </li>
             ))}
           </ul>
+          <Pager page={page} pageSize={PER_PAGE} total={shown.length} onPage={(n) => setPageState({ key: listKey, page: n })} label="articles" />
         </section>
       </div>
 

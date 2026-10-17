@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, MapPin, Search, Store, Trash2, UploadCloud, UserRound } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import type { Outlet } from "@/lib/types";
-import { cx } from "./ui";
+import { cx, Pager } from "./ui";
 
 const TEMPLATE =
   "name,type,address,district,latitude,longitude,phone,hours,services\n" +
@@ -41,6 +41,12 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
     const term = q.trim().toLowerCase();
     return outlets.filter((o) => !term || `${o.name} ${o.address} ${o.phone ?? ""}`.toLowerCase().includes(term));
   }, [outlets, q]);
+  // 10 locations per page; resets when the search changes.
+  const PER_PAGE = 10;
+  const [pageState, setPageState] = useState({ key: q, page: 0 });
+  const pageCount = Math.max(1, Math.ceil(shown.length / PER_PAGE));
+  const page = pageState.key === q ? Math.min(pageState.page, pageCount - 1) : 0;
+  const pageItems = shown.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
   const counts = { agents: outlets.filter((o) => o.kind !== "store").length, centres: outlets.filter((o) => o.kind === "store").length };
 
   async function upload(file: File) {
@@ -160,7 +166,7 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
             <Search className="size-3.5 text-muted" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, area, phone" className="w-full bg-transparent text-xs outline-none" />
           </label>
-          <div className="max-h-80 overflow-auto rounded-2xl bg-white/50 ring-1 ring-black/5">
+          <div className="overflow-x-auto rounded-2xl bg-white/50 ring-1 ring-black/5">
             <table className="w-full text-[12.5px]">
               <thead className="sticky top-0 bg-white/90 text-left text-muted backdrop-blur">
                 <tr>
@@ -172,7 +178,7 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.slice(0, 300).map((o) => (
+                {pageItems.map((o) => (
                   <tr key={o.id} className="group border-t border-line/60">
                     <td className="px-3 py-1.5">
                       <span className="flex items-center gap-1.5">
@@ -209,6 +215,7 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
               </tbody>
             </table>
           </div>
+          <Pager page={page} pageSize={PER_PAGE} total={shown.length} onPage={(n) => setPageState({ key: q, page: n })} label="locations" />
         </div>
       </div>
     </section>
