@@ -3,6 +3,7 @@ import type { InboundMessage } from "@/lib/whatsapp/types";
 import type { Mvno, Priority } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
+  addBotNote,
   getActiveConversation,
   getCsatPending,
   handoff,
@@ -136,13 +137,18 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
           : F.askOtherNumber(ctx, { amount: Number(b) });
       case "deliver":
         return F.askLocation(ctx, "delivery", { item: a });
+      case "near":
+        return findNearest(ctx, a === "store" || a === "agent" ? a : undefined);
     }
   }
 
   // ---------------------------------------------------------- awaited inputs
+  if (state.awaiting === "txn" && text && !isEscape(text)) {
+    return finishFailedTxn(ctx, /^(skip|no|sina|sirina)$/i.test(text) ? null : text.slice(0, 80));
+  }
   if (state.awaiting === "location") {
     if (msg.location) {
-      if (state.flow === "outlets") return F.showOutlets(ctx, msg.location);
+      if (state.flow === "outlets") return F.showOutlets(ctx, msg.location, state.data?.kind as F.OutletKind | undefined);
       if (state.flow === "delivery") {
         return F.createDelivery(ctx, (state.data?.item as "sim" | "esim") ?? "sim", {
           lat: msg.location.lat,
@@ -170,8 +176,8 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
     return F.confirmAirtime(ctx, Math.round(amount));
   }
 
-  // Shared a location out of context: treat it as "find shops near me".
-  if (msg.location) return F.showOutlets(ctx, msg.location);
+  // Shared a location out of context: treat it as "find agents near me".
+  if (msg.location) return F.showOutlets(ctx, msg.location, "agent");
 
   // ---------------------------------------------------------- free text
   if (isEscape(text)) return F.showMenu(ctx);
@@ -242,10 +248,17 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
       return amount >= 500 ? F.confirmAirtime(ctx, amount) : F.showAirtime(ctx);
     }
     case "find_nearest_outlets": {
-      const loc = ctx.contact.last_location;
-      const fresh = loc && Date.now() - new Date(loc.at).getTime() < 7 * 86_400_000;
-      return fresh ? F.showOutlets(ctx, loc) : F.askLocation(ctx, "outlets");
+      const p = input.purpose as string | undefined;
+      return findNearest(ctx, p === "agent" ? "agent" : p === "service_centre" ? "store" : undefined);
     }
+    case "report_failed_transaction": {
+      const id = String(input.transaction_id ?? "").trim();
+      return id ? finishFailedTxn(ctx, id.slice(0, 80)) : F.startFailedTxn(ctx);
+    }
+    case "sim_replacement_help":
+      return F.showSimLoss(ctx);
+    case "show_promos":
+      return F.showPromos(ctx);
     case "track_or_order_delivery":
       return F.showDeliveries(ctx);
     case "handoff_to_agent":
@@ -266,7 +279,13 @@ async function menuAction(ctx: F.FlowCtx, action: string) {
     case "balance":
       return F.showBalance(ctx);
     case "outlets":
-      return runTool(ctx, "find_nearest_outlets", {});
+      return findNearest(ctx);
+    case "promos":
+      return F.showPromos(ctx);
+    case "simloss":
+      return F.showSimLoss(ctx);
+    case "failed":
+      return F.startFailedTxn(ctx);
     case "delivery":
       return F.showDeliveries(ctx);
     case "line":
@@ -280,6 +299,34 @@ async function menuAction(ctx: F.FlowCtx, action: string) {
   }
 }
 
+/** Always asks for a fresh location pin, then recommends the nearest outlets of that kind. */
+function findNearest(ctx: F.FlowCtx, kind?: F.OutletKind) {
+  return F.askLocation(ctx, "outlets", { kind });
+}
+
+/** Failed/deducted transaction: hand to the team with a finance checklist as an internal note. */
+async function finishFailedTxn(ctx: F.FlowCtx, txnId: string | null) {
+  await F.say(ctx, {
+    type: "text",
+    text: txnId
+      ? `Thank you 🙏 I've sent transaction *${txnId}* to our finance team to verify. We'll update you here as soon as it's checked.`
+      : "No problem. Our finance team will trace it using your number and the time of the transaction. We'll update you here.",
+  });
+  await doHandoff(ctx, {
+    reason: `Failed transaction${txnId ? `, ID ${txnId}` : ", no ID given"}`,
+    priority: "high",
+    category: "payment",
+  });
+  await addBotNote(
+    ctx.conv,
+    `🔎 Finance check needed\n` +
+      `Transaction ID: ${txnId ?? "not provided: trace by number +" + ctx.contact.wa_id + " and time"}\n` +
+      `1. Verify in the billing/${ctx.mvno.wallet_name} system whether the transaction succeeded.\n` +
+      `2. If it succeeded, confirm the value was credited to the customer; if it failed, reverse it.\n` +
+      `3. Reply to the customer with the outcome, then resolve this ticket.`,
+  );
+}
+
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);
 // English, Luganda, Runyankole/Rukiga and Swahili greetings.
 const isGreeting = (t: string) =>
@@ -288,15 +335,22 @@ const isGreeting = (t: string) =>
 /** Used when no Claude API key is configured. */
 async function keywordFallback(ctx: F.FlowCtx, text: string) {
   const t = text.toLowerCase();
+  if (/fail|deduct|not received|didn.?t (get|receive)|charged|reverse|refund|wrong number/.test(t)) return F.startFailedTxn(ctx);
+  if (/stolen|lost (my )?(sim|phone)|replace|sim swap|damaged sim|broken sim/.test(t)) return F.showSimLoss(ctx);
   // "agent" alone usually means a PaxSente agent location, so it is not a handoff trigger.
-  if (/(talk to|speak to|human|person|customer care|complain|refund|fraud|stolen|lost|wrong number|reverse)/.test(t))
-    return doHandoff(ctx, { reason: text.slice(0, 120), priority: /fraud|stolen|lost/.test(t) ? "high" : "normal" });
+  if (/(talk to|speak to|human|person|customer care|complain|fraud)/.test(t))
+    return doHandoff(ctx, { reason: text.slice(0, 120), priority: /fraud/.test(t) ? "high" : "normal" });
+  if (/promo|offer/.test(t)) return F.showPromos(ctx);
+  if (/my number|namba yange|number yange/.test(t))
+    return F.say(ctx, { type: "text", text: `To see your number, dial ${ctx.mvno.ussd_codes?.self_service ?? "*100#"}. Your WhatsApp number with us is +${ctx.contact.wa_id}.` });
+  if (/agent/.test(t) && !/talk|speak/.test(t)) return findNearest(ctx, "agent");
+  if (/service cent|office|branch/.test(t)) return findNearest(ctx, "store");
   if (/sente|mobile money|wallet|withdraw|deposit|send money|fee/.test(t)) return F.showWallet(ctx);
   if (/balance|salio/.test(t)) return F.showBalance(ctx);
   if (/esim|e-sim/.test(t)) return F.showEsim(ctx);
   if (/bundle|data|internet|mb|gb|minutes|wiki|week/.test(t)) return F.showBundles(ctx);
   if (/airtime|credit|top ?up|recharge/.test(t)) return F.showAirtime(ctx);
-  if (/shop|store|near|agent location|service cent|kiosk|where/.test(t)) return runTool(ctx, "find_nearest_outlets", {});
+  if (/shop|store|near|kiosk|where/.test(t)) return findNearest(ctx);
   if (/deliver|sim card|order|track/.test(t)) return F.showDeliveries(ctx);
   if (/line|network|signal|suspend/.test(t)) return F.showLineStatus(ctx);
   return F.showMenu(ctx, "I can help with these. Pick one, or choose *Talk to an agent* 👇");

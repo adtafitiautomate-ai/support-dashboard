@@ -14,6 +14,7 @@ export interface Mvno {
   wallet_name: string;
   wallet_ussd: string | null;
   care_line: string | null;
+  ussd_codes: { self_service?: string; balance?: string; promos?: string };
   wa_phone_number_id: string | null;
   wa_display_number: string | null;
   bot_name: string;
@@ -58,7 +59,7 @@ export interface BotState {
   flow?: string;
   step?: string;
   data?: Record<string, unknown>;
-  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount";
+  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn";
   ai_turns?: number;
 }
 

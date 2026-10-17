@@ -38,6 +38,7 @@ export async function showMenu(ctx: FlowCtx, intro?: string) {
         title: "Top up",
         rows: [
           { id: "menu:bundles", title: "Buy a bundle", description: "Data, calls & SMS bundles" },
+          { id: "menu:promos", title: "Promo bundles", description: "Current promotions and offers" },
           { id: "menu:airtime", title: "Buy airtime", description: "Top up any number" },
           { id: "menu:balance", title: "Check my balance", description: "Airtime, data and expiry" },
         ],
@@ -48,12 +49,15 @@ export async function showMenu(ctx: FlowCtx, intro?: string) {
           { id: "menu:wallet", title: ctx.mvno.wallet_name.slice(0, 24), description: "Mobile money: fees, limits, help" },
           { id: "menu:outlets", title: "Find a shop or agent", description: "Nearest service centre or agent" },
           { id: "menu:delivery", title: "SIM, eSIM & deliveries", description: "Order a SIM, get an eSIM, track" },
-          { id: "menu:line", title: "My line status", description: "Line, SIM and network check" },
+          { id: "menu:simloss", title: "Lost / replace SIM", description: "Stolen, lost or damaged SIM" },
         ],
       },
       {
         title: "Help",
-        rows: [{ id: "menu:human", title: "Talk to an agent", description: "Chat with our support team" }],
+        rows: [
+          { id: "menu:failed", title: "Failed transaction", description: "Charged but didn't get value" },
+          { id: "menu:human", title: "Talk to an agent", description: "Chat with our support team" },
+        ],
       },
     ],
   });
@@ -72,7 +76,8 @@ export async function showBalance(ctx: FlowCtx) {
       `📞 Minutes: ${b.minutes}\n` +
       `✉️ SMS: ${b.sms}\n` +
       (b.activeBundle ? `\nActive bundle: ${b.activeBundle}\n` : "") +
-      `Expires: ${new Date(b.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
+      `Expires: ${new Date(b.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` +
+      (ctx.mvno.ussd_codes?.balance ? `\n\n_Tip: dial ${ctx.mvno.ussd_codes.balance} anytime to check your balance._` : ""),
     buttons: [
       { id: "menu:bundles", title: "Buy a bundle" },
       { id: "menu:airtime", title: "Buy airtime" },
@@ -156,6 +161,45 @@ export async function showBundleCategory(ctx: FlowCtx, category: Bundle["categor
   });
 }
 
+export async function showPromos(ctx: FlowCtx) {
+  const promo = ctx.mvno.ussd_codes?.promos;
+  await say(ctx, {
+    type: "buttons",
+    body: promo
+      ? `🎉 *Promo bundles*\n\nDial *${promo}* to see and buy today's promotions. Offers change often, so check back!`
+      : "🎉 Our current promotions are listed in the bundle menu.",
+    buttons: [
+      { id: "menu:bundles", title: "Regular bundles" },
+      { id: "menu:main", title: "Main menu" },
+    ],
+  });
+}
+
+export async function showSimLoss(ctx: FlowCtx) {
+  await say(ctx, {
+    type: "buttons",
+    body:
+      `*Lost, stolen or damaged SIM* 🔒\n\n` +
+      `Please visit your nearest *service centre* with your *original National ID*. We'll replace your SIM and you keep your number.\n\n` +
+      `Agents can't replace SIMs, so go to a service centre.`,
+    buttons: [
+      { id: "near:store", title: "Nearest centre" },
+      { id: "menu:main", title: "Main menu" },
+    ],
+  });
+}
+
+export async function startFailedTxn(ctx: FlowCtx) {
+  await setState(ctx, { flow: "failed_txn", awaiting: "txn" });
+  await say(ctx, {
+    type: "text",
+    text:
+      `Sorry about that 😔 Let's get it checked.\n\n` +
+      `Please send the *transaction ID* from your SMS or ${ctx.mvno.wallet_name} statement (e.g. PS81LM2Q), plus the amount if you can.\n\n` +
+      `No ID? Reply *skip*.`,
+  });
+}
+
 export async function showWallet(ctx: FlowCtx) {
   const m = ctx.mvno;
   await say(ctx, {
@@ -165,8 +209,8 @@ export async function showWallet(ctx: FlowCtx) {
       (m.wallet_ussd ? `Dial ${m.wallet_ussd} or use the app to send money, pay bills, buy airtime & data, and transfer to/from your bank.\n\n` : "") +
       `🔒 Never share your PIN, not even with our staff. Never pay an agent a fee in cash: fees come from your wallet.\n\nAsk me anything, e.g. _"how much to send 50,000?"_`,
     buttons: [
-      { id: "menu:outlets", title: "Find an agent" },
-      { id: "menu:human", title: "Report a problem" },
+      { id: "near:agent", title: "Find an agent" },
+      { id: "menu:failed", title: "Failed transaction" },
       { id: "menu:main", title: "Main menu" },
     ],
   });
@@ -300,28 +344,34 @@ export async function executePurchase(ctx: FlowCtx, p: { msisdn: string; bundleI
 
 // ------------------------------------------------------------------ outlets
 
-export async function askLocation(ctx: FlowCtx, purpose: "outlets" | "delivery", data: Record<string, unknown> = {}) {
+export type OutletKind = "agent" | "store";
+
+export async function askLocation(ctx: FlowCtx, purpose: "outlets" | "delivery", data: { kind?: OutletKind; item?: string } = {}) {
   await setState(ctx, { flow: purpose, awaiting: "location", data });
+  const what = data.kind === "agent" ? `agents (top-ups & ${ctx.mvno.wallet_name})` : data.kind === "store" ? "service centres" : "service centres and agents";
   await say(ctx, {
     type: "location_request",
     body:
       purpose === "outlets"
-        ? "Share your location 📍 and I'll find the nearest shops and agents."
+        ? `Share your location 📍 (tap the button below) and I'll send the nearest ${what}.`
         : "Share your delivery location 📍 (tap the button), or type your address.",
   });
 }
 
-export async function nearestOutlets(mvnoId: string, at: { lat: number; lng: number }, limit = 3) {
+/** Nearest outlets of a kind; falls back to any kind if none of that kind exist. */
+export async function nearestOutlets(mvnoId: string, at: { lat: number; lng: number }, kind?: OutletKind, limit = 3) {
   const { data } = await supabaseAdmin().from("outlets").select("*").eq("mvno_id", mvnoId);
-  return ((data ?? []) as Outlet[])
+  const all = (data ?? []) as Outlet[];
+  const pool = kind ? all.filter((o) => (kind === "store" ? o.kind === "store" : o.kind !== "store")) : all;
+  return (pool.length ? pool : all)
     .map((o) => ({ ...o, km: haversineKm(at, o) }))
     .sort((a, b) => a.km - b.km)
     .slice(0, limit);
 }
 
-export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }) {
+export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }, kind?: OutletKind) {
   await setState(ctx, {});
-  const list = await nearestOutlets(ctx.mvno.id, at);
+  const list = await nearestOutlets(ctx.mvno.id, at, kind);
   if (!list.length) {
     await say(ctx, { type: "text", text: "I couldn't find an outlet near you yet, sorry." });
     return;
@@ -395,7 +445,7 @@ export async function showEsim(ctx: FlowCtx) {
       `4. You get a QR code: scan it to activate.\n\n` +
       `Works on iPhone XS+, Samsung S20+, Pixel 3+, iPad Pro 2018+, Apple Watch 3+.`,
     buttons: [
-      { id: "menu:outlets", title: "Nearest centre" },
+      { id: "near:store", title: "Nearest centre" },
       { id: "menu:main", title: "Main menu" },
     ],
   });

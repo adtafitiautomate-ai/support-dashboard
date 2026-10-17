@@ -22,7 +22,7 @@ export function MessageBubble({ m, authorName }: { m: Message; authorName?: stri
       <div className="my-1.5 flex justify-end">
         <div className="max-w-[72%] rounded-xl border border-amber-400/40 bg-bubble-note px-3 py-2 shadow-sm">
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-medium text-warn">
-            <StickyNote className="size-3" /> Note · {authorName ?? "Agent"}
+            <StickyNote className="size-3" /> Note · {authorName ?? (m.sender_type === "system" ? "Pax (bot)" : "Agent")}
           </div>
           <div className="text-[13.5px] whitespace-pre-wrap">{m.body}</div>
           <div className="mt-0.5 text-right text-[10px] text-muted">{time(m.created_at)}</div>

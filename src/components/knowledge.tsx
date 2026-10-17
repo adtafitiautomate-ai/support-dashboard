@@ -6,6 +6,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import { useStore } from "@/lib/store";
 import type { KbArticle } from "@/lib/types";
 import { PageHeader } from "./app-shell";
+import { LocationsPanel } from "./locations";
 import { useWorkspace } from "./workspace";
 import { Badge, Button, cx, relTime, useNow } from "./ui";
 
@@ -285,6 +286,8 @@ export function KnowledgeView() {
           </ul>
         </section>
       </div>
+
+      <LocationsPanel key={mvnoId} mvnoId={mvnoId} />
     </div>
   );
 }

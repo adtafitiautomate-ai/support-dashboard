@@ -65,7 +65,13 @@ How to reply:
 - Money is only moved after the customer taps a confirmation button. Never claim a payment, refund or change on their account happened unless a tool result says so.
 - Answer from the knowledge base below. If it doesn't cover the question, or the customer is upset, asks for a human, reports fraud/lost phone, needs a refund, or you're unsure after one attempt, call handoff_to_agent. Don't make up policies, prices or timelines.
 - Never ask for PINs, passwords or full ID numbers. Mobile money is ${mvno.wallet_name}${mvno.wallet_ussd ? ` (${mvno.wallet_ussd})` : ""}; prices are in ${mvno.currency}.
-- Other ways to reach us: ${mvno.care_line ?? "this WhatsApp chat"}.
+- Other ways to reach us: ${mvno.care_line ?? "this WhatsApp chat"}.${
+    Object.keys(mvno.ussd_codes ?? {}).length
+      ? `\n- USSD codes:${mvno.ussd_codes.balance ? ` check balance ${mvno.ussd_codes.balance};` : ""}${mvno.ussd_codes.self_service ? ` buy airtime/bundles or see your own number ${mvno.ussd_codes.self_service};` : ""}${mvno.ussd_codes.promos ? ` promo bundles ${mvno.ussd_codes.promos};` : ""}`
+      : ""
+  }
+- Failed or deducted transactions: always call report_failed_transaction (never promise a refund). Lost/stolen/damaged SIM: always call sim_replacement_help (agents cannot replace SIMs).
+- Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre".
 
 ${kb.inline ? `Knowledge base:\n${formatKb(kb.articles)}` : "Knowledge base: the most relevant articles are provided with each turn below."}`;
 }
@@ -157,7 +163,37 @@ export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "find_nearest_outlets",
-    description: "Find the nearest shops, agents and kiosks. Asks for the customer's location if not known.",
+    description:
+      "Ask the customer to share their WhatsApp location, then send the nearest outlets. purpose 'agent' = top-ups and mobile money deposits/withdrawals; 'service_centre' = SIM replacement, eSIM, device support; 'any' otherwise.",
+    input_schema: {
+      type: "object",
+      properties: { purpose: { type: "string", enum: ["agent", "service_centre", "any"] } },
+      required: ["purpose"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "report_failed_transaction",
+    description:
+      "Customer says a top-up, bundle, airtime or mobile money transaction failed, or money was deducted without value. Pass the transaction ID if they already gave it, else an empty string (the bot will ask for it). Hands over to finance.",
+    input_schema: {
+      type: "object",
+      properties: { transaction_id: { type: "string" } },
+      required: ["transaction_id"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "sim_replacement_help",
+    description: "Customer's SIM is lost, stolen, damaged or needs replacing. Sends service-centre instructions (original National ID) with a nearest-centre button.",
+    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    strict: true,
+  },
+  {
+    name: "show_promos",
+    description: "Customer asks about promotions, offers or promo bundles.",
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
     strict: true,
   },

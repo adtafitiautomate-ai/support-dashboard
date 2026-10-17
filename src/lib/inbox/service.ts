@@ -220,7 +220,21 @@ export async function logEvent(conv: Pick<Conversation, "id" | "mvno_id">, text:
   });
 }
 
-const statusRank = { queued: 0, sent: 1, delivered: 2, read: 3, failed: 4 } as const;
+/** Internal note from the bot to the team (e.g. instructions for finance). Never sent to WhatsApp. */
+export async function addBotNote(conv: Pick<Conversation, "id" | "mvno_id">, text: string) {
+  await supabaseAdmin().from("messages").insert({
+    conversation_id: conv.id,
+    mvno_id: conv.mvno_id,
+    direction: "out",
+    sender_type: "system",
+    type: "note",
+    body: text,
+    is_internal: true,
+    status: "sent",
+  });
+}
+
+const statusRank ={ queued: 0, sent: 1, delivered: 2, read: 3, failed: 4 } as const;
 
 export async function applyStatus(update: StatusUpdate) {
   const db = supabaseAdmin();
