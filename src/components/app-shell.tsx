@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
+import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -32,11 +32,13 @@ function useAccess() {
   const isManager = useStore(
     (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
   );
-  return { isSuper, isManager };
+  const isAdmin = useStore((s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && m.role === "admin"));
+  return { isSuper, isManager, isAdmin };
 }
 
-const canSee = (item: { managersOnly?: boolean; superOnly?: boolean }, a: { isSuper: boolean; isManager: boolean }) =>
-  (!item.managersOnly || a.isManager) && (!item.superOnly || a.isSuper);
+/** Agents < supervisors (managers) < admins < super admins. */
+const canSee = (item: { managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean }, a: { isSuper: boolean; isManager: boolean; isAdmin: boolean }) =>
+  (!item.managersOnly || a.isManager) && (!item.adminsOnly || a.isAdmin) && (!item.superOnly || a.isSuper);
 
 function Gate({ children }: { children: ReactNode }) {
   const { ready } = useWorkspace();
@@ -59,7 +61,7 @@ function Gate({ children }: { children: ReactNode }) {
         <div className="card max-w-sm p-8">
           <ShieldCheck className="mx-auto size-8 text-muted" />
           <h1 className="mt-3 text-lg font-semibold">No access</h1>
-          <p className="mt-1 text-sm text-muted">{page.label} is available to supervisors and admins. Ask your admin if you need it.</p>
+          <p className="mt-1 text-sm text-muted">{page.label} is available to {page.superOnly ? "super admins" : page.adminsOnly ? "admins" : "supervisors and admins"}. Ask your admin if you need it.</p>
           <Link href="/inbox" className="mt-5 inline-flex rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white">
             Go to inbox
           </Link>
@@ -89,10 +91,11 @@ const NAV = [
   { href: "/dashboard", label: "Insights", icon: BarChart3, managersOnly: true },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/simulator", label: "Simulator", icon: Smartphone, managersOnly: true },
-  { href: "/settings", label: "Settings", icon: Settings, managersOnly: true },
+  { href: "/simulator", label: "Simulator", icon: Smartphone, adminsOnly: true },
+  { href: "/settings", label: "Settings", icon: Settings, adminsOnly: true },
+  { href: "/team", label: "Team", icon: Users, adminsOnly: true },
   { href: "/admin", label: "Admin", icon: ShieldCheck, superOnly: true },
-] as { href: string; label: string; icon: typeof Inbox; managersOnly?: boolean; superOnly?: boolean }[];
+] as { href: string; label: string; icon: typeof Inbox; managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean }[];
 
 function TopBar() {
   return (

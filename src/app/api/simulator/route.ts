@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { z } from "zod";
-import { errorResponse, HttpError, requireMvnoManager } from "@/lib/inbox/auth";
+import { errorResponse, HttpError, requireMvnoAdmin } from "@/lib/inbox/auth";
 import { isSimulated } from "@/lib/inbox/service";
 import { runSimulated, SIMULATOR_TAG } from "@/lib/inbox/simulation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -21,7 +21,7 @@ const Body = z.object({
 export async function POST(req: Request) {
   try {
     const body = Body.parse(await req.json());
-    const { mvno } = await requireMvnoManager(body.mvnoId);
+    const { mvno } = await requireMvnoAdmin(body.mvnoId);
 
     // Never inject fake messages into a real customer's chat.
     const { data: existing } = await supabaseAdmin().from("contacts").select("tags").eq("mvno_id", mvno.id).eq("wa_id", body.from).maybeSingle();
