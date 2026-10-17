@@ -104,8 +104,12 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
     switch (kind) {
       case "menu":
         return menuAction(ctx, a);
+      case "bcat":
+        return F.showBundleCategory(ctx, a as "data" | "voice" | "combo");
       case "bundle":
         return F.confirmBundle(ctx, a);
+      case "esim":
+        return F.showEsim(ctx);
       case "buy":
         return a === "self"
           ? F.executePurchase(ctx, { msisdn: ctx.contact.msisdn ?? ctx.contact.wa_id, bundleId: b })
@@ -113,7 +117,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
       case "airtime":
         if (a === "custom") {
           await updateConversation(ctx.conv.id, { bot_state: { flow: "airtime", awaiting: "amount" } });
-          return F.say(ctx, { type: "text", text: "Type the amount, e.g. 150" });
+          return F.say(ctx, { type: "text", text: "Type the amount in UGX, e.g. 3000" });
         }
         return F.confirmAirtime(ctx, Number(a));
       case "air":
@@ -143,7 +147,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   }
   if (state.awaiting === "msisdn" && text && !isEscape(text)) {
     const msisdn = F.normalizeMsisdn(text);
-    if (!msisdn) return F.say(ctx, { type: "text", text: "That number doesn't look right. Try e.g. 0712 345 678, or type 'menu'." });
+    if (!msisdn) return F.say(ctx, { type: "text", text: "That number doesn't look right. Try e.g. 0724 123 456, or type 'menu'." });
     return F.executePurchase(ctx, {
       msisdn,
       bundleId: state.data?.bundleId as string | undefined,
@@ -152,7 +156,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   }
   if (state.awaiting === "amount" && text && !isEscape(text)) {
     const amount = Number(text.replace(/[^\d.]/g, ""));
-    if (!amount || amount < 10 || amount > 10_000) return F.say(ctx, { type: "text", text: "Enter an amount between 10 and 10,000." });
+    if (!amount || amount < 500 || amount > 500_000) return F.say(ctx, { type: "text", text: "Enter an amount between UGX 500 and 500,000." });
     return F.confirmAirtime(ctx, Math.round(amount));
   }
 
@@ -212,8 +216,12 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
       return F.showBalance(ctx);
     case "check_line_status":
       return F.showLineStatus(ctx);
-    case "show_bundles":
-      return F.showBundles(ctx);
+    case "show_bundles": {
+      const cat = input.category as string | undefined;
+      return cat === "data" || cat === "voice" || cat === "combo" ? F.showBundleCategory(ctx, cat) : F.showBundles(ctx);
+    }
+    case "show_esim_steps":
+      return F.showEsim(ctx);
     case "start_bundle_purchase": {
       const code = String(input.bundle_code ?? "").toUpperCase();
       const b = (await F.listBundles(ctx.mvno.id)).find((x) => x.code.toUpperCase() === code);
@@ -221,7 +229,7 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     }
     case "start_airtime_purchase": {
       const amount = Number(input.amount ?? 0);
-      return amount >= 10 ? F.confirmAirtime(ctx, amount) : F.showAirtime(ctx);
+      return amount >= 500 ? F.confirmAirtime(ctx, amount) : F.showAirtime(ctx);
     }
     case "find_nearest_outlets": {
       const loc = ctx.contact.last_location;
@@ -253,6 +261,8 @@ async function menuAction(ctx: F.FlowCtx, action: string) {
       return F.showDeliveries(ctx);
     case "line":
       return F.showLineStatus(ctx);
+    case "wallet":
+      return F.showWallet(ctx);
     case "human":
       return doHandoff(ctx, { reason: "Customer asked to talk to an agent", priority: "normal" });
     default:
@@ -261,18 +271,23 @@ async function menuAction(ctx: F.FlowCtx, action: string) {
 }
 
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);
-const isGreeting = (t: string) => /^(hi+|hey|hello|hallo|habari|niaje|mambo|sasa|good (morning|afternoon|evening))\b/i.test(t);
+// English, Luganda, Runyankole/Rukiga and Swahili greetings.
+const isGreeting = (t: string) =>
+  /^(hi+|hey|hello|hallo|good (morning|afternoon|evening)|oli otya|gyebale|ki kati|wasuze otya|agandi|oraire ota|habari|mambo|jambo)\b/i.test(t);
 
 /** Used when no Claude API key is configured. */
 async function keywordFallback(ctx: F.FlowCtx, text: string) {
   const t = text.toLowerCase();
-  if (/(agent|human|person|customer care|complain|refund|fraud|stolen|lost)/.test(t))
+  // "agent" alone usually means a PaxSente agent location, so it is not a handoff trigger.
+  if (/(talk to|speak to|human|person|customer care|complain|refund|fraud|stolen|lost|wrong number|reverse)/.test(t))
     return doHandoff(ctx, { reason: text.slice(0, 120), priority: /fraud|stolen|lost/.test(t) ? "high" : "normal" });
+  if (/sente|mobile money|wallet|withdraw|deposit|send money|fee/.test(t)) return F.showWallet(ctx);
   if (/balance|salio/.test(t)) return F.showBalance(ctx);
-  if (/bundle|data|internet|mb|gb|wiki|week/.test(t)) return F.showBundles(ctx);
+  if (/esim|e-sim/.test(t)) return F.showEsim(ctx);
+  if (/bundle|data|internet|mb|gb|minutes|wiki|week/.test(t)) return F.showBundles(ctx);
   if (/airtime|credit|top ?up|recharge/.test(t)) return F.showAirtime(ctx);
-  if (/shop|store|near|agent location|kiosk|where/.test(t)) return runTool(ctx, "find_nearest_outlets", {});
-  if (/deliver|esim|sim card|order|track/.test(t)) return F.showDeliveries(ctx);
+  if (/shop|store|near|agent location|service cent|kiosk|where/.test(t)) return runTool(ctx, "find_nearest_outlets", {});
+  if (/deliver|sim card|order|track/.test(t)) return F.showDeliveries(ctx);
   if (/line|network|signal|suspend/.test(t)) return F.showLineStatus(ctx);
   return F.showMenu(ctx, "I can help with these. Pick one, or choose *Talk to an agent* 👇");
 }

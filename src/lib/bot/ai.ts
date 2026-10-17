@@ -47,9 +47,9 @@ const formatKb = (articles: Pick<KbArticle, "title" | "body">[]) => articles.map
 /** Volatile per-turn context: customer facts plus retrieved articles when the KB is large. */
 async function turnContext(mvno: Mvno, contact: Contact, history: Message[]) {
   const kb = await knowledgeBase(mvno.id);
-  if (kb.inline) return customerContext(contact);
+  if (kb.inline) return customerContext(mvno, contact);
   const found = await retrieveKb(mvno.id, history);
-  return `${customerContext(contact)}\n\nRelevant knowledge base articles for this conversation:\n${found.length ? formatKb(found) : "(none matched: if unsure, hand over to an agent)"}`;
+  return `${customerContext(mvno, contact)}\n\nRelevant knowledge base articles for this conversation:\n${found.length ? formatKb(found) : "(none matched: if unsure, hand over to an agent)"}`;
 }
 
 /** Stable per-MVNO system prompt: identical bytes across requests so it caches. */
@@ -60,20 +60,21 @@ Brand voice: ${mvno.bot_persona}
 
 How to reply:
 - This is WhatsApp. Keep replies short (1–4 short lines), friendly and specific. Use *bold* sparingly, no markdown headings or tables.
-- Reply in the customer's language (e.g. Swahili or Sheng if they write that way).
+- Reply in the customer's language (e.g. Luganda, Runyankole/Rukiga, Swahili or English) if they write that way.
 - Prefer tools over describing steps: if the customer wants to buy, check, find or track something, call the matching tool. The tools send interactive WhatsApp messages themselves, so don't repeat their content.
 - Money is only moved after the customer taps a confirmation button. Never claim a payment, refund or change on their account happened unless a tool result says so.
 - Answer from the knowledge base below. If it doesn't cover the question, or the customer is upset, asks for a human, reports fraud/lost phone, needs a refund, or you're unsure after one attempt, call handoff_to_agent. Don't make up policies, prices or timelines.
-- Never ask for PINs, passwords or full ID numbers.
+- Never ask for PINs, passwords or full ID numbers. Mobile money is ${mvno.wallet_name}${mvno.wallet_ussd ? ` (${mvno.wallet_ussd})` : ""}; prices are in ${mvno.currency}.
+- Other ways to reach us: ${mvno.care_line ?? "this WhatsApp chat"}.
 
 ${kb.inline ? `Knowledge base:\n${formatKb(kb.articles)}` : "Knowledge base: the most relevant articles are provided with each turn below."}`;
 }
 
-function customerContext(contact: Contact) {
+function customerContext(mvno: Mvno, contact: Contact) {
   return `Customer: ${contact.name ?? "unknown name"}, WhatsApp +${contact.wa_id}, plan ${contact.plan ?? "prepaid"}${
     contact.tags.length ? `, tags: ${contact.tags.join(", ")}` : ""
   }. Their location is ${contact.last_location ? "known" : "unknown"}. Local time: ${new Date().toLocaleString("en-GB", {
-    timeZone: "Africa/Nairobi",
+    timeZone: mvno.business_hours?.tz ?? "Africa/Kampala",
     weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
@@ -116,7 +117,18 @@ export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "show_bundles",
-    description: "Send the interactive list of data/voice bundles with prices so the customer can pick one.",
+    description: "Send the interactive list of bundles with prices so the customer can pick one. Pass the category if clear, else 'any'.",
+    input_schema: {
+      type: "object",
+      properties: { category: { type: "string", enum: ["data", "voice", "combo", "any"] } },
+      required: ["category"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: "show_esim_steps",
+    description: "Send the eSIM compatibility check and in-person activation steps, with a button to find the nearest service centre.",
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
     strict: true,
   },

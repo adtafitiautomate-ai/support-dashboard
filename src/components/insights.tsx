@@ -34,7 +34,7 @@ const RANGES = [
   { id: "30", label: "30 days" },
 ];
 
-// Validated categorical slots 1â€“2 (light/dark): blue = bot, orange = human.
+// Validated categorical slots 1–2 (light/dark): blue = bot, orange = human.
 const SERIES = {
   bot: "light-dark(#2a78d6, #3987e5)",
   human: "light-dark(#eb6834, #d95926)",
@@ -115,7 +115,7 @@ export function Insights() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Tile icon={<Inbox />} label="Open now" value={stats.open} sub={`${stats.unassigned} waiting in queue Â· ${stats.pending} pending`} />
+              <Tile icon={<Inbox />} label="Open now" value={stats.open} sub={`${stats.unassigned} waiting in queue · ${stats.pending} pending`} />
               <Tile
                 icon={<AlertTriangle />}
                 label="SLA breached"
@@ -125,7 +125,7 @@ export function Insights() {
               />
               <Tile icon={<Clock />} label="Avg first response" value={fmtDuration(stats.avg_first_response_secs)} sub={`Avg resolution ${stats.avg_resolution_mins} min`} />
               <Tile icon={<Bot />} label="Bot containment" value={`${containment}%`} sub={`${stats.bot_contained} of ${stats.conversations} without an agent`} />
-              <Tile icon={<Smile />} label="CSAT" value={stats.csat_avg ? `${stats.csat_avg}/5` : "â€“"} sub={`${stats.csat_count} ratings`} />
+              <Tile icon={<Smile />} label="CSAT" value={stats.csat_avg ? `${stats.csat_avg}/5` : "–"} sub={`${stats.csat_count} ratings`} />
               <Tile icon={<Wallet />} label="WhatsApp top-ups" value={formatMoney(stats.recharge_total, currency)} sub={`${stats.recharge_count} successful`} />
               <Tile icon={<Package />} label="Active deliveries" value={stats.deliveries_active} sub="SIM / eSIM / devices" />
               <Tile icon={<Users />} label="With bot now" value={stats.with_bot} sub="Self-serving customers" />
@@ -168,7 +168,7 @@ export function Insights() {
                         </td>
                         <td className="py-2 text-right tabular-nums">{a.open}</td>
                         <td className="py-2 text-right tabular-nums">{a.resolved}</td>
-                        <td className="py-2 text-right tabular-nums">{a.csat ?? "â€“"}</td>
+                        <td className="py-2 text-right tabular-nums">{a.csat ?? "–"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -183,7 +183,7 @@ export function Insights() {
 }
 
 function fmtDuration(secs: number) {
-  if (!secs) return "â€“";
+  if (!secs) return "–";
   if (secs < 60) return `${secs}s`;
   if (secs < 3600) return `${Math.round(secs / 60)}m`;
   return `${(secs / 3600).toFixed(1)}h`;

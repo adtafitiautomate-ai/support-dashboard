@@ -27,14 +27,17 @@ create table public.mvnos (
   slug text not null unique,
   name text not null,
   brand_color text not null default '#25D366',
-  currency text not null default 'KES',
+  currency text not null default 'UGX',
+  wallet_name text not null default 'mobile money',    -- e.g. PaxSente
+  wallet_ussd text,                                    -- e.g. *185#
+  care_line text,                                      -- e.g. "Dial 100 (toll free)"
   wa_phone_number_id text unique,          -- Meta Cloud API phone_number_id
   wa_display_number text,
   bot_name text not null default 'Assistant',
   bot_persona text not null default '',
   greeting text not null default 'Hi! How can we help you today?',
   sla_first_response_mins int not null default 5,
-  business_hours jsonb not null default '{"tz":"Africa/Nairobi","open":"08:00","close":"20:00","days":[1,2,3,4,5,6]}',
+  business_hours jsonb not null default '{"tz":"Africa/Kampala","open":"08:00","close":"20:00","days":[0,1,2,3,4,5,6]}',
   created_at timestamptz not null default now()
 );
 
@@ -206,6 +209,8 @@ create table public.bundles (
   mvno_id uuid not null references public.mvnos(id) on delete cascade,
   code text not null,
   name text not null,
+  category text not null default 'data' check (category in ('voice', 'data', 'combo', 'deal')),
+  ussd text,                                -- self-service code, e.g. *100*2*2#
   price numeric(12,2) not null,
   data_mb int not null default 0,
   minutes int not null default 0,

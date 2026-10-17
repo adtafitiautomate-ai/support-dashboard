@@ -11,6 +11,9 @@ export interface Mvno {
   name: string;
   brand_color: string;
   currency: string;
+  wallet_name: string;
+  wallet_ussd: string | null;
+  care_line: string | null;
   wa_phone_number_id: string | null;
   wa_display_number: string | null;
   bot_name: string;
@@ -107,6 +110,8 @@ export interface Bundle {
   mvno_id: string;
   code: string;
   name: string;
+  category: "voice" | "data" | "combo" | "deal";
+  ussd: string | null;
   price: number;
   data_mb: number;
   minutes: number;

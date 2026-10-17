@@ -45,8 +45,9 @@ export async function showMenu(ctx: FlowCtx, intro?: string) {
       {
         title: "Services",
         rows: [
-          { id: "menu:outlets", title: "Find a shop or agent", description: "Nearest store, agent or kiosk" },
-          { id: "menu:delivery", title: "SIM / eSIM delivery", description: "Order or track a delivery" },
+          { id: "menu:wallet", title: ctx.mvno.wallet_name.slice(0, 24), description: "Mobile money: fees, limits, help" },
+          { id: "menu:outlets", title: "Find a shop or agent", description: "Nearest service centre or agent" },
+          { id: "menu:delivery", title: "SIM, eSIM & deliveries", description: "Order a SIM, get an eSIM, track" },
           { id: "menu:line", title: "My line status", description: "Line, SIM and network check" },
         ],
       },
@@ -110,24 +111,64 @@ export async function listBundles(mvnoId: string): Promise<Bundle[]> {
   return data ?? [];
 }
 
+const CATEGORY_LABEL: Record<Bundle["category"], string> = {
+  data: "Data bundles",
+  voice: "Voice bundles",
+  combo: "Combo bundles",
+  deal: "Deals",
+};
+
+/** Step 1: pick a category (WhatsApp lists hold max 10 rows, catalogues are bigger). */
 export async function showBundles(ctx: FlowCtx) {
   const bundles = await listBundles(ctx.mvno.id);
+  const cats = [...new Set(bundles.map((b) => b.category))];
+  if (bundles.length <= 10 || cats.length < 2) return showBundleCategory(ctx, null);
   await setState(ctx, { flow: "bundle" });
-  const group = (pred: (b: Bundle) => boolean) =>
-    bundles.filter(pred).map((b) => ({
+  await say(ctx, {
+    type: "buttons",
+    body: "What kind of bundle would you like? 👇 Bundles activate instantly after payment.",
+    buttons: [
+      { id: "bcat:data", title: "📶 Data" },
+      { id: "bcat:voice", title: "📞 Voice" },
+      { id: "bcat:combo", title: "🎁 Combos & deals" },
+    ],
+  });
+}
+
+/** Step 2: list the bundles in one category (null = all). */
+export async function showBundleCategory(ctx: FlowCtx, category: Bundle["category"] | null) {
+  const all = await listBundles(ctx.mvno.id);
+  const bundles = all.filter((b) => !category || b.category === category || (category === "combo" && b.category === "deal"));
+  await setState(ctx, { flow: "bundle" });
+  const rows = (list: Bundle[]) =>
+    list.map((b) => ({
       id: `bundle:${b.id}`,
-      title: `${b.name}`.slice(0, 24),
+      title: b.name.slice(0, 24),
       description: `${formatMoney(b.price, ctx.mvno.currency)} · ${bundleSummary(b)}`,
     }));
+  const groups = [...new Set(bundles.map((b) => b.category))];
+  const ussd = bundles.find((b) => b.ussd)?.ussd;
   await say(ctx, {
     type: "list",
-    body: "Pick a bundle 👇 It activates instantly after payment.",
+    body: `Pick a bundle 👇${ussd ? `\nYou can also dial ${ussd}.` : ""}`,
     button: "See bundles",
-    sections: [
-      { title: "Daily", rows: group((b) => b.validity_days <= 1) },
-      { title: "Weekly", rows: group((b) => b.validity_days > 1 && b.validity_days <= 7) },
-      { title: "Monthly", rows: group((b) => b.validity_days > 7) },
-    ].filter((s) => s.rows.length),
+    sections: groups.map((g) => ({ title: CATEGORY_LABEL[g], rows: rows(bundles.filter((b) => b.category === g)) })),
+  });
+}
+
+export async function showWallet(ctx: FlowCtx) {
+  const m = ctx.mvno;
+  await say(ctx, {
+    type: "buttons",
+    body:
+      `*${m.wallet_name}* 💸\n\n` +
+      (m.wallet_ussd ? `Dial ${m.wallet_ussd} or use the app to send money, pay bills, buy airtime & data, and transfer to/from your bank.\n\n` : "") +
+      `🔒 Never share your PIN, not even with our staff. Never pay an agent a fee in cash: fees come from your wallet.\n\nAsk me anything, e.g. _"how much to send 50,000?"_`,
+    buttons: [
+      { id: "menu:outlets", title: "Find an agent" },
+      { id: "menu:human", title: "Report a problem" },
+      { id: "menu:main", title: "Main menu" },
+    ],
   });
 }
 
@@ -139,7 +180,7 @@ export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
     type: "buttons",
     header: b.name,
     body: `${bundleSummary(b)}\n*Price: ${formatMoney(b.price, ctx.mvno.currency)}*\n\nWho is this for?`,
-    footer: "Paid via mobile money",
+    footer: `Paid with ${ctx.mvno.wallet_name}`,
     buttons: [
       { id: `buy:self:${b.id}`, title: "My number" },
       { id: `buy:other:${b.id}`, title: "Another number" },
@@ -150,14 +191,15 @@ export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
 
 export async function askOtherNumber(ctx: FlowCtx, purchase: { bundleId?: string; amount?: number }) {
   await setState(ctx, { flow: "purchase", awaiting: "msisdn", data: purchase });
-  await say(ctx, { type: "text", text: "Type the number to top up, e.g. 0712 345 678" });
+  await say(ctx, { type: "text", text: "Type the number to top up, e.g. 0724 123 456" });
 }
 
+/** Ugandan mobile numbers: 07XX XXX XXX, 2567XXXXXXXX or 7XXXXXXXX. */
 export function normalizeMsisdn(input: string): string | null {
   const digits = input.replace(/\D/g, "");
-  if (/^0[17]\d{8}$/.test(digits)) return "254" + digits.slice(1);
-  if (/^254[17]\d{8}$/.test(digits)) return digits;
-  if (/^[17]\d{8}$/.test(digits)) return "254" + digits;
+  if (/^07\d{8}$/.test(digits)) return "256" + digits.slice(1);
+  if (/^2567\d{8}$/.test(digits)) return digits;
+  if (/^7\d{8}$/.test(digits)) return "256" + digits;
   return null;
 }
 
@@ -170,7 +212,7 @@ export async function showAirtime(ctx: FlowCtx) {
     sections: [
       {
         title: "Amount",
-        rows: [50, 100, 250, 500, 1000].map((a) => ({ id: `airtime:${a}`, title: formatMoney(a, ctx.mvno.currency) })),
+        rows: [1000, 2000, 5000, 10000, 20000].map((a) => ({ id: `airtime:${a}`, title: formatMoney(a, ctx.mvno.currency) })),
       },
       { title: "Other", rows: [{ id: "airtime:custom", title: "Enter an amount" }] },
     ],
@@ -221,7 +263,7 @@ export async function executePurchase(ctx: FlowCtx, p: { msisdn: string; bundleI
   await setState(ctx, {});
   await say(ctx, {
     type: "text",
-    text: `📲 A payment request for *${formatMoney(amount, ctx.mvno.currency)}* has been sent to +${ctx.contact.wa_id}. Enter your PIN on your phone to approve.`,
+    text: `📲 A ${ctx.mvno.wallet_name} payment request for *${formatMoney(amount, ctx.mvno.currency)}* has been sent to +${ctx.contact.wa_id}. Enter your ${ctx.mvno.wallet_name} PIN on the prompt to approve. Never share your PIN here.`,
   });
 
   const result = await mvnoApi(ctx.mvno.slug).chargeAndCredit({
@@ -295,7 +337,7 @@ export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }
             `${i + 1}. ${kindIcon[o.kind]} *${o.name}* · ${o.km.toFixed(1)} km\n   ${o.address}\n   🕒 ${o.hours ?? "–"}${o.phone ? `  ☎️ ${o.phone}` : ""}`,
         )
         .join("\n\n") +
-      `\n\n🏬 stores do SIM swaps & eSIM · 🧑‍💼 agents do top-ups & registration`,
+      `\n\n🏬 service centres: SIM swaps, eSIM, ${ctx.mvno.wallet_name}, device support · 🧑‍💼 agents: deposits, withdrawals, airtime & bundles`,
   });
   const top = list[0];
   await say(ctx, { type: "location", lat: top.lat, lng: top.lng, name: top.name, address: top.address });
@@ -332,10 +374,28 @@ export async function showDeliveries(ctx: FlowCtx) {
     : "You have no active deliveries.";
   await say(ctx, {
     type: "buttons",
-    body: `${body}\n\nWould you like to order a new SIM or eSIM? Delivery is free.`,
+    body: `${body}\n\nWould you like a new SIM delivered, or an eSIM?`,
     buttons: [
-      { id: "deliver:sim", title: "Order a SIM" },
-      { id: "deliver:esim", title: "Order an eSIM" },
+      { id: "deliver:sim", title: "Deliver a SIM" },
+      { id: "esim:info", title: "Get an eSIM" },
+      { id: "menu:main", title: "Main menu" },
+    ],
+  });
+}
+
+/** eSIMs are activated in person (biometrics + National ID), so guide the customer there. */
+export async function showEsim(ctx: FlowCtx) {
+  await say(ctx, {
+    type: "buttons",
+    body:
+      `*Getting an eSIM* 📱\n\n` +
+      `1. Dial *#06#: if you see an *EID* number, your phone supports eSIM.\n` +
+      `2. Visit a service centre with your *original National ID*.\n` +
+      `3. We capture your biometrics and photo.\n` +
+      `4. You get a QR code: scan it to activate.\n\n` +
+      `Works on iPhone XS+, Samsung S20+, Pixel 3+, iPad Pro 2018+, Apple Watch 3+.`,
+    buttons: [
+      { id: "menu:outlets", title: "Nearest centre" },
       { id: "menu:main", title: "Main menu" },
     ],
   });

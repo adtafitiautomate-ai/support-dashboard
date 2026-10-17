@@ -26,7 +26,16 @@ export function toMetaPayload(to: string, msg: OutboundMessage): Record<string, 
           },
         },
       };
-    case "list":
+    case "list": {
+      // WhatsApp allows at most 10 rows across all sections of a list.
+      let budget = 10;
+      const sections = msg.sections
+        .map((s) => {
+          const rows = s.rows.slice(0, Math.max(0, budget));
+          budget -= rows.length;
+          return { ...s, rows };
+        })
+        .filter((s) => s.rows.length);
       return {
         ...base,
         type: "interactive",
@@ -37,9 +46,9 @@ export function toMetaPayload(to: string, msg: OutboundMessage): Record<string, 
           ...(msg.footer ? { footer: { text: clip(msg.footer, 60) } } : {}),
           action: {
             button: clip(msg.button, 20),
-            sections: msg.sections.map((s) => ({
+            sections: sections.map((s) => ({
               title: clip(s.title, 24),
-              rows: s.rows.slice(0, 10).map((r) => ({
+              rows: s.rows.map((r) => ({
                 id: r.id,
                 title: clip(r.title, 24),
                 ...(r.description ? { description: clip(r.description, 72) } : {}),
@@ -48,6 +57,7 @@ export function toMetaPayload(to: string, msg: OutboundMessage): Record<string, 
           },
         },
       };
+    }
     case "location":
       return { ...base, type: "location", location: { latitude: msg.lat, longitude: msg.lng, name: msg.name, address: msg.address } };
     case "location_request":

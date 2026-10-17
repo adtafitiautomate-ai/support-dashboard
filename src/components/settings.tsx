@@ -171,7 +171,7 @@ function WhatsAppSettings({ mvno }: { mvno: Mvno }) {
     <div className="space-y-4">
       <div className="flex items-center gap-2 card p-4">
         <span className="text-sm">Status:</span>
-        {simulated ? <Badge tone="violet">Simulator</Badge> : <Badge tone="green">Meta Cloud API Â· {mvno.wa_phone_number_id}</Badge>}
+        {simulated ? <Badge tone="violet">Simulator</Badge> : <Badge tone="green">Meta Cloud API · {mvno.wa_phone_number_id}</Badge>}
       </div>
       <form
         className="space-y-4 card p-5"
@@ -180,14 +180,14 @@ function WhatsAppSettings({ mvno }: { mvno: Mvno }) {
           void save(false);
         }}
       >
-        <Field label="Phone number ID" hint="Meta for Developers â†’ your app â†’ WhatsApp â†’ API Setup â†’ Phone number ID (not the phone number itself).">
+        <Field label="Phone number ID" hint="Meta for Developers → your app → WhatsApp → API Setup → Phone number ID (not the phone number itself).">
           <input className={cx(input, "font-mono")} value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value.trim())} placeholder="e.g. 123456789012345" required />
         </Field>
         <Field label="Display number">
           <input className={input} value={displayNumber} onChange={(e) => setDisplayNumber(e.target.value)} placeholder="+1 555 0100" />
         </Field>
         <Field label="Access token (optional)" hint="Leave empty to use WHATSAPP_ACCESS_TOKEN from the server environment. Stored server-side only, never shown again.">
-          <input type="password" className={cx(input, "font-mono")} value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAGâ€¦" />
+          <input type="password" className={cx(input, "font-mono")} value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAG…" />
         </Field>
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="primary">Connect number</Button>
@@ -201,7 +201,7 @@ function WhatsAppSettings({ mvno }: { mvno: Mvno }) {
       </form>
       <div className="card p-5 text-sm">
         <div className="mb-2 font-medium">Webhook</div>
-        <p className="text-muted">In Meta â†’ WhatsApp â†’ Configuration, set:</p>
+        <p className="text-muted">In Meta → WhatsApp → Configuration, set:</p>
         <ul className="mt-2 space-y-1">
           <li>
             Callback URL: <code className="rounded bg-surface-2 px-1">{webhook}</code>{" "}

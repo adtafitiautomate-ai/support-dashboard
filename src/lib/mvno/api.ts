@@ -47,12 +47,12 @@ class MockMvnoApi implements MvnoApi {
   async getBalance(msisdn: string): Promise<Balance> {
     const r = seeded(msisdn);
     return {
-      airtime: r(500) + r(99) / 100,
-      dataMb: r(8000),
+      airtime: r(20) * 500 + r(10) * 50,
+      dataMb: r(3000),
       minutes: r(300),
       sms: r(200),
       expiresAt: new Date(Date.now() + (1 + r(20)) * 86_400_000).toISOString(),
-      activeBundle: ["Weekly 5GB", "Daily 1GB", null, "Monthly 20GB"][r(4)],
+      activeBundle: ["700MB Daily", "60 Minutes", null, "Mega Value: 200 mins + 10GB"][r(4)],
     };
   }
 
@@ -70,7 +70,7 @@ class MockMvnoApi implements MvnoApi {
   async chargeAndCredit(input: { msisdn: string; amount: number }): Promise<PaymentResult> {
     await new Promise((res) => setTimeout(res, 1200)); // simulate STK approval round-trip
     const reference = Math.random().toString(36).slice(2, 12).toUpperCase();
-    const ok = input.amount > 0 && input.amount <= 10_000;
+    const ok = input.amount > 0 && input.amount <= 5_000_000; // PaxSente per-transaction limit
     return {
       status: ok ? "success" : "failed",
       reference,

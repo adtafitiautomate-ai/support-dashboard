@@ -10,20 +10,20 @@ import { useWorkspace } from "./workspace";
 import { api, Button, cx } from "./ui";
 
 const PLACES = [
-  { name: "Nairobi CBD", lat: -1.2864, lng: 36.8172 },
-  { name: "Westlands", lat: -1.2676, lng: 36.8108 },
-  { name: "Kibera", lat: -1.3133, lng: 36.7876 },
-  { name: "Rongai", lat: -1.3936, lng: 36.7442 },
-  { name: "Mombasa", lat: -4.0435, lng: 39.6682 },
+  { name: "Makerere, Kampala", lat: 0.3350, lng: 32.5680 },
+  { name: "Kampala CBD", lat: 0.3150, lng: 32.5820 },
+  { name: "Masaka", lat: -0.3330, lng: 31.7340 },
+  { name: "Mbarara town", lat: -0.6050, lng: 30.6550 },
+  { name: "Kasese", lat: 0.1830, lng: 30.0830 },
 ];
 
-const randomNumber = () => `2547${Math.floor(10_000_000 + Math.random() * 89_999_999)}`;
+const randomNumber = () => `25672${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
 
 export function Simulator() {
   const { onEvent } = useWorkspace();
   const mvnos = useStore((s) => [...s.mvnos.values()]);
   const [mvnoId, setMvnoId] = useState(mvnos[0]?.id ?? "");
-  const [from, setFrom] = useState("254712999001");
+  const [from, setFrom] = useState("256724999001");
   const [name, setName] = useState("Test Customer");
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -91,7 +91,7 @@ export function Simulator() {
           <select value={mvnoId} onChange={(e) => setMvnoId(e.target.value)} className="w-full rounded-lg border border-line bg-surface-2 px-2 py-1.5">
             {mvnos.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} Â· {m.wa_display_number}
+                {m.name} · {m.wa_display_number}
               </option>
             ))}
           </select>
@@ -111,7 +111,7 @@ export function Simulator() {
         </label>
         <div className="rounded-lg bg-surface-2 p-3 text-xs text-muted">
           <div className="mb-1 font-medium text-ink">Try:</div>
-          â€œhiâ€ Â· â€œnataka bundle ya wikiâ€ Â· â€œmy data isn&apos;t workingâ€ Â· â€œwhere is the nearest shop?â€ Â· â€œI was charged but got nothingâ€ Â· â€œtrack my SIM deliveryâ€ Â· â€œtalk to a personâ€
+          “hi” · “oli otya” · “njagala bundle ya data” · “how much to send 50,000 on PaxSente?” · “how do I get an eSIM?” · “nearest service centre” · “I was charged but got nothing” · “talk to a person”
         </div>
         {error && <p className="text-sm text-danger">{error}</p>}
       </div>
@@ -124,7 +124,7 @@ export function Simulator() {
               {mvno?.name[0]}
             </div>
             <div className="leading-tight">
-              <div className="text-sm font-semibold">{mvno?.name} âœ“</div>
+              <div className="text-sm font-semibold">{mvno?.name} ✓</div>
               <div className="text-[11px] opacity-80">Business account</div>
             </div>
           </div>

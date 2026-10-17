@@ -23,10 +23,11 @@ npm run dev
 | Account | Access |
 |---|---|
 | admin@demo.test | Platform admin: all MVNOs |
-| amina@nova.test | Supervisor, Nova Mobile |
-| brian@nova.test | Agent, Nova + Zuri |
-| chen@zuri.test | Admin, Zuri Telecom |
-| dana@pulse.test | Admin, Pulse Connect |
+| sarah@paxtel.test | Supervisor, PaxTel |
+| david@paxtel.test | Agent, PaxTel |
+| grace@paxtel.test | Agent, PaxTel |
+
+The seed loads PaxTel (Hamilton Telecom, Uganda): published bundles with USSD codes, PaxSente fees and rules, eSIM steps, service centres (Wandegeya, Ben Kiwanuka Street, Masaka) and Mbarara agents. Outlet coordinates are approximate, so correct them in the `outlets` table.
 
 Set `ANTHROPIC_API_KEY` to enable the AI (free-text answers, summaries, drafts, PDF/link training). Without it the bot still runs all guided flows, with a keyword fallback.
 
