@@ -123,7 +123,7 @@ export function Insights() {
                 sub="No first response in time"
                 status={stats.sla_breached > 0 ? "critical" : "good"}
               />
-              <Tile icon={<Clock />} label="Avg first response" value={fmtDuration(stats.avg_first_response_secs)} sub={`Avg resolution ${formatMinutes(stats.avg_resolution_mins)}`} />
+              <Tile icon={<Clock />} label="Avg first response" value={fmtDuration(stats.avg_first_response_secs)} sub={`Avg ticket resolution ${formatMinutes(stats.avg_resolution_mins)}`} />
               <Tile icon={<Bot />} label="Bot containment" value={`${containment}%`} sub={`${stats.bot_contained} of ${stats.conversations} without an agent`} />
               <Tile icon={<Smile />} label="CSAT" value={stats.csat_avg ? `${stats.csat_avg}/5` : "–"} sub={`${stats.csat_count} ratings`} />
               <Tile icon={<Wallet />} label="WhatsApp top-ups" value={formatMoney(stats.recharge_total, currency)} sub={`${stats.recharge_count} successful`} />

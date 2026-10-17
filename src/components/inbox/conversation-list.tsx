@@ -46,7 +46,7 @@ export function filterConversations(s: ReturnType<typeof getState>, view: InboxV
     if (mvno !== "all" && c.mvno_id !== mvno) continue;
     if (q) {
       const contact = s.contacts.get(c.contact_id);
-      const hay = `${contact?.name ?? ""} ${contact?.wa_id ?? ""} ${c.subject ?? ""} ${c.last_message_preview ?? ""} #${c.ticket_no}`.toLowerCase();
+      const hay = `${contact?.name ?? ""} ${contact?.wa_id ?? ""} ${c.subject ?? ""} ${c.last_message_preview ?? ""} ${c.ticket_no ? `#${c.ticket_no}` : ""}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
     out.push(c);
@@ -126,7 +126,7 @@ export function ConversationList(props: { list: Conversation[]; view: InboxView;
                         {mvno.name}
                       </span>
                     )}
-                    <span className="text-[11px] text-muted">#{c.ticket_no}</span>
+                    {c.ticket_no && <span className="text-[11px] text-muted">#{c.ticket_no}</span>}
                     {c.sentiment === "negative" && (
                       <span className="text-[11px]" title="Negative sentiment">
                         😠

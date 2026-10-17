@@ -28,7 +28,7 @@ interface Range {
 
 type Conv = {
   id: string;
-  ticket_no: number;
+  ticket_no: number | null;
   mvno_id: string;
   status: string;
   priority: string;
@@ -58,6 +58,9 @@ const day = (iso: string) => iso.slice(0, 10);
 /** Summary tiles: "3h 44m (224 min)" so the unit is never ambiguous. */
 const withMinutes = (m: number | null) => (m === null ? null : `${formatMinutes(m)} (${Math.round(m)} min)`);
 const when = (iso: string | null) => (iso ? new Date(iso).toISOString().replace("T", " ").slice(0, 16) : null);
+
+/** Ticket resolution: from when the team got it (handover, or creation for agent-started chats). */
+const ticketMins = (c: Conv) => mins(c.handoff_at ?? c.created_at, c.resolved_at);
 
 function breached(c: Conv) {
   if (!c.sla_due_at) return false;
@@ -96,11 +99,12 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
           ["Conversations", cs.length],
           ["Handled fully by the bot", cs.length - human.length],
           ["Bot containment %", pct(cs.length - human.length, cs.length)],
-          ["Handed to agents", human.length],
+          ["Tickets (needed a person)", cs.filter((c) => c.ticket_no).length],
+          ["Handed to agents by the bot", human.length],
           ["Resolved", cs.filter((c) => c.status === "resolved").length],
           ["Still open / pending", cs.filter((c) => c.status === "open" || c.status === "pending").length],
           ["Avg first response", withMinutes(avg(human.map((c) => mins(c.handoff_at, c.first_response_at))))],
-          ["Avg resolution time", withMinutes(avg(cs.map((c) => mins(c.created_at, c.resolved_at))))],
+          ["Avg ticket resolution (from handover)", withMinutes(avg(cs.filter((c) => c.ticket_no).map(ticketMins)))],
           ["SLA breaches", human.filter(breached).length],
           ["SLA met %", pct(human.length - human.filter(breached).length, human.length)],
           ["CSAT average (1–5)", avg(rated.map((c) => c.csat_score))],
@@ -118,7 +122,7 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
       return {
         columns: ["Ticket", "Created", "MVNO", "Customer", "WhatsApp", "Status", "Priority", "Category", "Subject", "Assigned to", "Handled by", "First response (min)", "Resolution (min)", "SLA breached", "Sentiment", "CSAT"],
         rows: cs.map((c) => [
-          c.ticket_no,
+          c.ticket_no ?? "",
           when(c.created_at),
           c.mvno?.name ?? "",
           c.contact?.name ?? "",
@@ -130,7 +134,7 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
           c.assignee?.full_name ?? "",
           c.handoff_at ? "Agent" : "Bot",
           mins(c.handoff_at, c.first_response_at),
-          mins(c.created_at, c.resolved_at),
+          c.ticket_no ? ticketMins(c) : mins(c.created_at, c.resolved_at),
           c.handoff_at ? (breached(c) ? "Yes" : "No") : "",
           c.sentiment ?? "",
           c.csat_score,
@@ -155,7 +159,7 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
               resolved.length,
               pct(resolved.length, list.length),
               avg(list.map((c) => mins(c.handoff_at, c.first_response_at))),
-              avg(resolved.map((c) => mins(c.created_at, c.resolved_at))),
+              avg(resolved.map(ticketMins)),
               list.filter(breached).length,
               avg(rated.map((c) => c.csat_score)),
               rated.length,
@@ -191,16 +195,16 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
       const by = new Map<string, Conv[]>();
       for (const c of cs) by.set(c.category ?? "uncategorised", [...(by.get(c.category ?? "uncategorised") ?? []), c]);
       return {
-        columns: ["Reason", "Conversations", "Share %", "Handed to agents", "Negative sentiment", "Avg resolution (min)", "CSAT avg"],
+        columns: ["Reason", "Conversations", "Share %", "Tickets", "Negative sentiment", "Avg ticket resolution (min)", "CSAT avg"],
         rows: [...by.entries()]
           .sort((a, b) => b[1].length - a[1].length)
           .map(([k, list]) => [
             k,
             list.length,
             pct(list.length, cs.length),
-            list.filter((c) => c.handoff_at).length,
+            list.filter((c) => c.ticket_no).length,
             list.filter((c) => c.sentiment === "negative").length,
-            avg(list.map((c) => mins(c.created_at, c.resolved_at))),
+            avg(list.filter((c) => c.ticket_no).map(ticketMins)),
             avg(list.map((c) => c.csat_score)),
           ]),
       };
@@ -228,7 +232,7 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
       const cs = (await conversations(r)).filter((c) => c.csat_score);
       return {
         columns: ["Ticket", "Resolved", "Customer", "Agent", "Category", "Score (1–5)", "Subject"],
-        rows: cs.map((c) => [c.ticket_no, when(c.resolved_at), c.contact?.name ?? "", c.assignee?.full_name ?? "Bot", c.category ?? "", c.csat_score, c.subject ?? ""]),
+        rows: cs.map((c) => [c.ticket_no ?? "Bot chat", when(c.resolved_at), c.contact?.name ?? "", c.assignee?.full_name ?? "Bot", c.category ?? "", c.csat_score, c.subject ?? ""]),
       };
     }
 

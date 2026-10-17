@@ -18,12 +18,12 @@ export async function notifyFailedTransaction(
   if (!to.length) return;
   await sendMail(
     to,
-    `[${mvno.name}] Failed ${t.type} · ticket #${conv.ticket_no}`,
+    `[${mvno.name}] Failed ${t.type} · ticket #${conv.ticket_no ?? "–"}`,
     renderEmail({
       title: `Failed ${t.type} to verify`,
       intro: `A customer reported a failed ${t.type} on WhatsApp. Please verify in the billing / mobile money system, then resolve the ticket.`,
       rows: [
-        ["Ticket", `#${conv.ticket_no}`],
+        ["Ticket", `#${conv.ticket_no ?? "–"}`],
         ["Customer", `${contact.name ?? "Unknown"} (${formatPhone(contact.wa_id)})`],
         ["Transaction type", t.type],
         ["Transaction ID", t.id ?? "Not provided: trace by number and time"],
@@ -38,12 +38,12 @@ export async function notifyWaitingNoAgent(mvno: M, conv: Pick<Conversation, "id
   if (!mvno.alert_emails?.length) return;
   await sendMail(
     mvno.alert_emails,
-    `[${mvno.name}] Customer waiting, no agent online · #${conv.ticket_no}`,
+    `[${mvno.name}] Customer waiting, no agent online · #${conv.ticket_no ?? "–"}`,
     renderEmail({
       title: "A customer is waiting and no agent is online",
       intro: "The bot handed this chat to the team, but nobody was online to take it.",
       rows: [
-        ["Ticket", `#${conv.ticket_no}`],
+        ["Ticket", `#${conv.ticket_no ?? "–"}`],
         ["Customer", `${contact.name ?? "Unknown"} (${formatPhone(contact.wa_id)})`],
         ["Reason", reason],
       ],
@@ -56,12 +56,12 @@ export async function notifyDeletionRequest(mvno: M, conv: Pick<Conversation, "i
   if (!mvno.alert_emails?.length) return;
   await sendMail(
     mvno.alert_emails,
-    `[${mvno.name}] Data deletion request · #${conv.ticket_no}`,
+    `[${mvno.name}] Data deletion request · #${conv.ticket_no ?? "–"}`,
     renderEmail({
       title: "Customer asked to delete their data",
       intro: "Verify the customer's identity, then use Erase customer data in the inbox (History tab). Respond within the legal time limit.",
       rows: [
-        ["Ticket", `#${conv.ticket_no}`],
+        ["Ticket", `#${conv.ticket_no ?? "–"}`],
         ["Customer", `${contact.name ?? "Unknown"} (${formatPhone(contact.wa_id)})`],
       ],
       cta: { label: "Open ticket", url: ticketUrl(conv) },

@@ -72,7 +72,7 @@ export interface BotState {
 
 export interface Conversation {
   id: string;
-  ticket_no: number;
+  ticket_no: number | null; // set only once a person is involved (handoff or assignment)
   mvno_id: string;
   contact_id: string;
   status: ConversationStatus;

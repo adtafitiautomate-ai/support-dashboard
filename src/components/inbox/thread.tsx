@@ -96,7 +96,7 @@ export function Thread({ conversation: c, onTogglePanel }: { conversation: Conve
           <div className="flex items-center gap-2 text-xs text-muted">
             {contact && <span>{formatPhone(contact.wa_id)}</span>}
             {mvno && <MvnoTag name={mvno.name} color={mvno.brand_color} />}
-            <span>#{c.ticket_no}</span>
+            {c.ticket_no && <span>#{c.ticket_no}</span>}
           </div>
         </div>
 

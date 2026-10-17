@@ -89,7 +89,7 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
     <aside className="card flex w-[310px] shrink-0 flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 pt-3.5">
         <span className="text-[13px] font-medium text-muted">Profile</span>
-        <span className="text-[11px] text-muted">#{c.ticket_no}</span>
+        <span className="text-[11px] text-muted">{c.ticket_no ? `Ticket #${c.ticket_no}` : "Bot chat"}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
@@ -270,7 +270,7 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
               .map((h) => (
                 <li key={h.id}>
                   <a href={`/inbox?c=${h.id}`} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-[13px] hover:bg-accent-soft">
-                    <span className="text-muted">#{h.ticket_no}</span>
+                    <span className="text-muted">{h.ticket_no ? `#${h.ticket_no}` : "Bot"}</span>
                     <span className="flex-1 truncate">{h.subject ?? h.last_message_preview}</span>
                     {h.csat_score && <span className="text-[11px] text-muted">★{h.csat_score}</span>}
                     <span className="text-[11px] text-muted">{relTime(h.created_at, now)}</span>

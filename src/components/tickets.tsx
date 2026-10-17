@@ -39,6 +39,7 @@ export function TicketsView() {
     let query = supabaseBrowser()
       .from("conversations")
       .select("*, contact:contacts(name, wa_id)")
+      .not("ticket_no", "is", null)
       .order("last_message_at", { ascending: false })
       .limit(500);
     if (status === "active") query = query.neq("status", "resolved");
@@ -88,7 +89,7 @@ export function TicketsView() {
         title="Tickets"
         subtitle={
           <>
-            <Ticket className="size-3.5" /> Every conversation as a ticket. Click one for details, status and history.
+            <Ticket className="size-3.5" /> Chats that needed a person: handed over by the bot or assigned to an agent. Click one for details, status and history.
           </>
         }
       />
