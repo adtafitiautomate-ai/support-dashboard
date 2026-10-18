@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Building2, Cpu, History, Mail, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { patch } from "@/lib/store";
 import type { MemberRole, Mvno } from "@/lib/types";
@@ -17,6 +18,7 @@ type AdminUser = {
   id: string;
   full_name: string;
   email: string;
+  contact_email: string | null;
   is_platform_admin: boolean;
   status: string;
   disabled: boolean;
@@ -34,7 +36,7 @@ export function AdminConsole() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<AdminMvno> | null>(null);
   const [creatingUser, setCreatingUser] = useState<{ mvno_id?: string } | null>(null);
-  const [secret, setSecret] = useState<{ email: string; password: string; title: string } | null>(null);
+  const [secret, setSecret] = useState<{ email: string; password: string; title: string; delivery?: Delivery } | null>(null);
   const [renewing, setRenewing] = useState<AdminMvno | null>(null);
 
   const load = useCallback(async () => {
@@ -55,7 +57,7 @@ export function AdminConsole() {
   async function userAction(body: Record<string, unknown>) {
     setError(null);
     try {
-      const res = await api<{ password?: string }>("/api/admin/users", body);
+      const res = await api<{ password?: string } & Delivery>("/api/admin/users", body);
       await load();
       return res;
     } catch (e) {
@@ -197,9 +199,9 @@ export function AdminConsole() {
           mvnos={data.mvnos}
           defaultMvno={creatingUser.mvno_id}
           onClose={() => setCreatingUser(null)}
-          onCreated={async (email, password) => {
+          onCreated={async (email, password, delivery) => {
             setCreatingUser(null);
-            setSecret({ email, password, title: "User created" });
+            setSecret({ email, password, title: "User created", delivery });
             await load();
           }}
         />
@@ -230,12 +232,13 @@ function UserRow({
   u: AdminUser;
   mvnos: AdminMvno[];
   mvnoName: (id: string) => string;
-  act: (b: Record<string, unknown>) => Promise<{ password?: string } | undefined>;
-  onSecret: (s: { email: string; password: string; title: string }) => void;
+  act: (b: Record<string, unknown>) => Promise<({ password?: string } & Delivery) | undefined>;
+  onSecret: (s: { email: string; password: string; title: string; delivery?: Delivery }) => void;
 }) {
   const now = useNow(60_000);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
   const available = mvnos.filter((m) => !u.memberships.some((x) => x.mvno_id === m.id));
   const run = async (b: Record<string, unknown>) => {
     setBusy(true);
@@ -254,9 +257,24 @@ function UserRow({
               {u.full_name}
               {u.is_platform_admin && <Badge tone="violet">Super admin</Badge>}
             </div>
-            <div className="text-xs text-muted">{displayLogin(u.email)}</div>
+            <div className="text-xs text-muted">
+              {displayLogin(u.email)}
+              {u.contact_email && u.contact_email !== u.email && <> · {u.contact_email}</>}
+              {!u.contact_email && <span className="text-warn"> · no email</span>}
+            </div>
           </div>
         </div>
+        {editingEmail && (
+          <EmailDialog
+            name={u.full_name}
+            current={u.contact_email}
+            onClose={() => setEditingEmail(false)}
+            onSave={async (email) => {
+              setEditingEmail(false);
+              await run({ action: "set_email", email });
+            }}
+          />
+        )}
       </td>
       <td className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -319,11 +337,14 @@ function UserRow({
             disabled={busy}
             onClick={async () => {
               const r = await run({ action: "reset_password" });
-              if (r?.password) onSecret({ email: displayLogin(u.email), password: r.password, title: "Password reset" });
+              if (r?.password) onSecret({ email: displayLogin(u.email), password: r.password, title: "Password reset", delivery: r });
             }}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-ink"
           >
             <KeyRound className="size-3.5" /> Reset password
+          </button>
+          <button disabled={busy} onClick={() => setEditingEmail(true)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-ink">
+            <Mail className="size-3.5" /> {u.contact_email ? "Email" : "Add email"}
           </button>
           <button
             disabled={busy}
@@ -510,9 +531,9 @@ function CreateUser({
   mvnos: AdminMvno[];
   defaultMvno?: string;
   onClose: () => void;
-  onCreated: (email: string, password: string) => void;
+  onCreated: (email: string, password: string, d: Delivery) => void;
 }) {
-  const [f, setF] = useState({ full_name: "", email: "", mvno_id: defaultMvno ?? mvnos[0]?.id ?? "", role: "agent" as MemberRole, platform_admin: false, password: "" });
+  const [f, setF] = useState({ contact_email: "", full_name: "", email: "", mvno_id: defaultMvno ?? mvnos[0]?.id ?? "", role: "agent" as MemberRole, platform_admin: false, password: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -521,7 +542,7 @@ function CreateUser({
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ email: string; password: string }>("/api/admin/users", {
+      const r = await api<{ email: string; password: string } & Delivery>("/api/admin/users", {
         action: "create",
         full_name: f.full_name,
         email: f.email,
@@ -529,8 +550,9 @@ function CreateUser({
         mvno_id: f.mvno_id || undefined,
         role: f.role,
         platform_admin: f.platform_admin,
+        contact_email: f.contact_email,
       });
-      onCreated(displayLogin(r.email), r.password);
+      onCreated(displayLogin(r.email), r.password, r);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -544,7 +566,17 @@ function CreateUser({
           <input required className={field} value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
         </L>
         <L label="Username or email" hint="A plain username (e.g. sophie) signs in without an email address.">
-          <input required autoCapitalize="none" spellCheck={false} className={field} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+          <input
+            required
+            autoCapitalize="none"
+            spellCheck={false}
+            className={field}
+            value={f.email}
+            onChange={(e) => setF({ ...f, email: e.target.value, contact_email: e.target.value.includes("@") && (!f.contact_email || f.contact_email === f.email) ? e.target.value : f.contact_email })}
+          />
+        </L>
+        <L label="Email" hint="Their login details are emailed here.">
+          <input required type="email" className={field} value={f.contact_email} onChange={(e) => setF({ ...f, contact_email: e.target.value })} placeholder="name@company.com" />
         </L>
         <div className="grid grid-cols-2 gap-3">
           <L label="MVNO">
@@ -574,19 +606,20 @@ function CreateUser({
         </label>
         {error && <p className="text-sm text-danger">{error}</p>}
         <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-2.5 text-sm font-medium text-white disabled:opacity-60">
-          {busy && <Loader2 className="size-4 animate-spin" />} Create login
+          {busy && <Loader2 className="size-4 animate-spin" />} Create login & email details
         </button>
       </form>
     </Modal>
   );
 }
 
-function SecretDialog({ email, password, title, onClose }: { email: string; password: string; title: string; onClose: () => void }) {
+function SecretDialog({ email, password, title, delivery, onClose }: { email: string; password: string; title: string; delivery?: Delivery; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const text = `Login: ${typeof window !== "undefined" ? window.location.origin : ""}/login\nUsername: ${email}\nPassword: ${password}`;
   return (
     <Modal title={title} onClose={onClose}>
-      <p className="mb-3 text-sm text-muted">Share these credentials securely. The password is shown only once.</p>
+      <DeliveryNote d={delivery} />
+      <p className="mb-3 text-sm text-muted">The password is shown only once here.</p>
       <pre className="rounded-xl bg-zinc-50 p-3 font-mono text-[13px] whitespace-pre-wrap ring-1 ring-black/5">{text}</pre>
       <button
         onClick={async () => {
@@ -598,5 +631,61 @@ function SecretDialog({ email, password, title, onClose }: { email: string; pass
         {copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? "Copied" : "Copy credentials"}
       </button>
     </Modal>
+  );
+}
+
+type Delivery = { emailed_to?: string | null; email_error?: string | null };
+
+/** "Sent to x" or why the login details weren't emailed. */
+function DeliveryNote({ d }: { d?: Delivery }) {
+  if (!d) return null;
+  return d.emailed_to ? (
+    <p className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-emerald-200">
+      <Mail className="size-4 shrink-0" /> Sent to <b className="font-semibold">{d.emailed_to}</b>
+    </p>
+  ) : (
+    <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200">
+      Not emailed: {d.email_error ?? "unknown error"}. Copy the details below and share them securely.
+    </p>
+  );
+}
+
+/** Small dialog to add or change where someone's login emails go. */
+function EmailDialog({ name, current, onClose, onSave }: { name: string; current: string | null; onClose: () => void; onSave: (email: string) => Promise<void> }) {
+  const [email, setEmail] = useState(current ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return createPortal(
+    <div className="fixed inset-0 z-60 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onClick={onClose}>
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError(null);
+          try {
+            await onSave(email.trim());
+          } catch (err) {
+            setError((err as Error).message);
+            setBusy(false);
+          }
+        }}
+        className="w-full max-w-sm space-y-3 rounded-3xl bg-white p-6 shadow-2xl"
+      >
+        <h2 className="text-lg font-semibold">Email for {name}</h2>
+        <p className="text-sm text-muted">Login details and password resets are sent here.</p>
+        <input type="email" required autoFocus className={field} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl px-4 py-2 text-sm font-medium text-muted hover:bg-zinc-100">
+            Cancel
+          </button>
+          <button disabled={busy} className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+            {busy && <Loader2 className="size-4 animate-spin" />} Save
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   );
 }

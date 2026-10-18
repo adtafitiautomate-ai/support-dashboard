@@ -3,6 +3,7 @@ import { errorResponse } from "@/lib/inbox/auth";
 import { requirePlatformAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { tokenStatus } from "@/lib/wa-tokens";
+import { contactEmailOf } from "@/lib/credentials-mail";
 
 /** Super admin: every MVNO with headline numbers, and every user with email, roles and status. */
 export async function GET() {
@@ -25,6 +26,7 @@ export async function GET() {
       return {
         ...p,
         email: a?.email ?? "",
+        contact_email: contactEmailOf(a),
         disabled: !!a?.banned_until && new Date(a.banned_until) > new Date(),
         last_sign_in_at: a?.last_sign_in_at ?? null,
         memberships: (members.data ?? []).filter((m) => m.user_id === p.id).map((m) => ({ mvno_id: m.mvno_id, role: m.role })),

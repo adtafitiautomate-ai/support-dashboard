@@ -3,6 +3,7 @@ import { errorResponse, HttpError } from "@/lib/inbox/auth";
 import { requirePlatformAdmin, tempPassword } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { toLoginEmail } from "@/lib/login";
+import { contactEmailOf, mailCredentials, setContactEmail } from "@/lib/credentials-mail";
 import { audit, enforce, LIMITS } from "@/lib/security";
 
 const Role = z.enum(["admin", "supervisor", "agent"]);
@@ -22,7 +23,9 @@ const Body = z.discriminatedUnion("action", [
     mvno_id: z.guid().optional(),
     role: Role.default("agent"),
     platform_admin: z.boolean().default(false),
+    contact_email: z.email("Enter a valid email address").trim().toLowerCase(), // where the login details are sent
   }),
+  z.object({ action: z.literal("set_email"), user_id: z.guid(), email: z.email("Enter a valid email address").trim().toLowerCase() }),
   z.object({ action: z.literal("set_membership"), user_id: z.guid(), mvno_id: z.guid(), role: Role.nullable() }), // null removes
   z.object({ action: z.literal("reset_password"), user_id: z.guid(), password: z.string().min(10).max(72).optional() }),
   z.object({ action: z.literal("set_disabled"), user_id: z.guid(), disabled: z.boolean() }),
@@ -49,15 +52,17 @@ export async function POST(req: Request) {
           password,
           email_confirm: true,
           user_metadata: { full_name: body.full_name },
-          app_metadata: { invited: true }, // passes the invite-only sign-up guard
+          app_metadata: { invited: true, contact_email: body.contact_email }, // invited: passes the invite-only sign-up guard
         });
         if (error) throw new HttpError(error.status === 422 ? 409 : 400, error.message.includes("already") ? "A user with that email already exists" : error.message);
         const id = data.user.id;
         // Profile row is created by the auth trigger; make sure name/admin flag are set.
         await db.from("profiles").upsert({ id, full_name: body.full_name, is_platform_admin: body.platform_admin });
         if (body.mvno_id) await db.from("mvno_members").upsert({ mvno_id: body.mvno_id, user_id: id, role: body.role });
-        await audit(me, "user.created", { target: body.full_name, mvnoId: body.mvno_id ?? null, details: { login: data.user.email, role: body.role, super_admin: body.platform_admin } });
-        return Response.json({ user_id: id, email: data.user.email, password });
+        const mvnoName = body.mvno_id ? (await db.from("mvnos").select("name").eq("id", body.mvno_id).maybeSingle()).data?.name : undefined;
+        const mailError = await mailCredentials({ to: body.contact_email, name: body.full_name, login: data.user.email ?? body.email, password, kind: "welcome", mvnoName });
+        await audit(me, "user.created", { target: body.full_name, mvnoId: body.mvno_id ?? null, details: { login: data.user.email, role: body.role, super_admin: body.platform_admin, emailed: !mailError } });
+        return Response.json({ user_id: id, email: data.user.email, password, emailed_to: mailError ? null : body.contact_email, email_error: mailError });
       }
       case "set_membership": {
         if (body.role === null) {
@@ -71,10 +76,18 @@ export async function POST(req: Request) {
       }
       case "reset_password": {
         const password = body.password ?? tempPassword();
-        const { error } = await db.auth.admin.updateUserById(body.user_id, { password });
+        const { data: u, error } = await db.auth.admin.updateUserById(body.user_id, { password });
         if (error) throw error;
-        await audit(me, "user.password_reset", { target: await nameOf(body.user_id) });
-        return Response.json({ password });
+        const name = await nameOf(body.user_id);
+        const to = contactEmailOf(u.user);
+        const mailError = await mailCredentials({ to, name, login: u.user.email ?? "", password, kind: "reset" });
+        await audit(me, "user.password_reset", { target: name, details: { emailed: !mailError } });
+        return Response.json({ password, emailed_to: mailError ? null : to, email_error: mailError });
+      }
+      case "set_email": {
+        await setContactEmail(body.user_id, body.email);
+        await audit(me, "user.email_set", { target: await nameOf(body.user_id), details: { email: body.email } });
+        return Response.json({ ok: true });
       }
       case "set_disabled": {
         if (body.user_id === me.id) throw new HttpError(400, "You can't disable your own account");

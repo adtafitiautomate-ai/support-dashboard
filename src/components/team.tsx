@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, KeyRound, Loader2, UserPlus, Users, X } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Mail, UserPlus, Users, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import type { MemberRole } from "@/lib/types";
 import { displayLogin } from "@/lib/login";
@@ -16,6 +16,7 @@ type Member = {
   status: string;
   is_platform_admin: boolean;
   email: string;
+  contact_email: string | null;
   disabled: boolean;
   last_sign_in_at: string | null;
 };
@@ -39,7 +40,8 @@ export function TeamView() {
   const [team, setTeam] = useState<Member[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [secret, setSecret] = useState<{ login: string; password: string; title: string } | null>(null);
+  const [secret, setSecret] = useState<{ login: string; password: string; title: string; delivery?: Delivery } | null>(null);
+  const [editingEmail, setEditingEmail] = useState<Member | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -58,7 +60,7 @@ export function TeamView() {
     setBusy(userId);
     setError(null);
     try {
-      const r = await api<{ password?: string }>("/api/team", { mvnoId, userId, ...body });
+      const r = await api<{ password?: string } & Delivery>("/api/team", { mvnoId, userId, ...body });
       await load();
       return r;
     } catch (e) {
@@ -130,7 +132,11 @@ export function TeamView() {
                               {self && <Badge>You</Badge>}
                               {m.is_platform_admin && <Badge tone="violet">Super admin</Badge>}
                             </div>
-                            <div className="text-xs text-muted">{displayLogin(m.email)}</div>
+                            <div className="text-xs text-muted">
+                              {displayLogin(m.email)}
+                              {m.contact_email && m.contact_email !== m.email && <> · {m.contact_email}</>}
+                              {!m.contact_email && <span className="text-warn"> · no email</span>}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -151,13 +157,22 @@ export function TeamView() {
                       <td className="px-4 py-3 whitespace-nowrap text-muted">{m.last_sign_in_at ? `${relTime(m.last_sign_in_at, now)} ago` : "Never"}</td>
                       <td className="px-4 py-3">{m.disabled ? <Badge tone="red">Disabled</Badge> : <Badge tone="green">Active</Badge>}</td>
                       <td className="px-4 py-3">
-                        {!locked && (
+                        {(!locked || self) && (
                           <div className="flex justify-end gap-1">
+                            <button
+                              disabled={busy === m.id}
+                              onClick={() => setEditingEmail(m)}
+                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-ink"
+                            >
+                              <Mail className="size-3.5" /> {m.contact_email ? "Email" : "Add email"}
+                            </button>
+                            {!locked && (
+                              <>
                             <button
                               disabled={busy === m.id}
                               onClick={async () => {
                                 const r = await act(m.id, { action: "reset_password" });
-                                if (r?.password) setSecret({ login: displayLogin(m.email), password: r.password, title: `New password for ${m.full_name}` });
+                                if (r?.password) setSecret({ login: displayLogin(m.email), password: r.password, title: `New password for ${m.full_name}`, delivery: r });
                               }}
                               className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-ink"
                             >
@@ -173,6 +188,8 @@ export function TeamView() {
                             <button disabled={busy === m.id} onClick={() => act(m.id, { action: "remove" })} className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-danger">
                               Remove from team
                             </button>
+                              </>
+                            )}
                           </div>
                         )}
                       </td>
@@ -202,14 +219,26 @@ export function TeamView() {
           mvnoId={mvnoId}
           mvnoName={mvnoName}
           onClose={() => setAdding(false)}
-          onCreated={async (login, password) => {
+          onCreated={async (login, password, delivery) => {
             setAdding(false);
-            setSecret({ login: displayLogin(login), password, title: "Login created" });
+            setSecret({ login: displayLogin(login), password, title: "Login created", delivery });
             await load();
           }}
         />
       )}
       {secret && <Secret {...secret} onClose={() => setSecret(null)} />}
+      {editingEmail && (
+        <EmailDialog
+          name={editingEmail.full_name}
+          current={editingEmail.contact_email}
+          onClose={() => setEditingEmail(null)}
+          onSave={async (email) => {
+            await api("/api/team", { action: "set_email", mvnoId, userId: editingEmail.id, email });
+            setEditingEmail(null);
+            await load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -231,8 +260,8 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function AddMember({ mvnoId, mvnoName, onClose, onCreated }: { mvnoId: string; mvnoName: string; onClose: () => void; onCreated: (login: string, password: string) => void }) {
-  const [f, setF] = useState({ full_name: "", login: "", role: "agent" as MemberRole, password: "" });
+function AddMember({ mvnoId, mvnoName, onClose, onCreated }: { mvnoId: string; mvnoName: string; onClose: () => void; onCreated: (login: string, password: string, d: Delivery) => void }) {
+  const [f, setF] = useState({ full_name: "", login: "", email: "", role: "agent" as MemberRole, password: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,8 +270,8 @@ function AddMember({ mvnoId, mvnoName, onClose, onCreated }: { mvnoId: string; m
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ login: string; password: string }>("/api/team", { action: "create", mvnoId, ...f, password: f.password || undefined });
-      onCreated(r.login, r.password);
+      const r = await api<{ login: string; password: string } & Delivery>("/api/team", { action: "create", mvnoId, ...f, password: f.password || undefined });
+      onCreated(r.login, r.password, r);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -258,7 +287,20 @@ function AddMember({ mvnoId, mvnoName, onClose, onCreated }: { mvnoId: string; m
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-muted">Username or email</span>
-          <input required autoCapitalize="none" spellCheck={false} className={field} value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} placeholder="e.g. joan" />
+          <input
+            required
+            autoCapitalize="none"
+            spellCheck={false}
+            className={field}
+            value={f.login}
+            onChange={(e) => setF({ ...f, login: e.target.value, email: e.target.value.includes("@") && (!f.email || f.email === f.login) ? e.target.value : f.email })}
+            placeholder="e.g. joan"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted">Email</span>
+          <input required type="email" className={field} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="joan@company.com" />
+          <span className="mt-1 block text-xs text-muted">Their login details are emailed here.</span>
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-muted">Role</span>
@@ -276,19 +318,20 @@ function AddMember({ mvnoId, mvnoName, onClose, onCreated }: { mvnoId: string; m
         </label>
         {error && <p className="text-sm text-danger">{error}</p>}
         <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-2.5 text-sm font-medium text-white disabled:opacity-60">
-          {busy && <Loader2 className="size-4 animate-spin" />} Create login
+          {busy && <Loader2 className="size-4 animate-spin" />} Create login & email details
         </button>
       </form>
     </Shell>
   );
 }
 
-function Secret({ login, password, title, onClose }: { login: string; password: string; title: string; onClose: () => void }) {
+function Secret({ login, password, title, delivery, onClose }: { login: string; password: string; title: string; delivery?: Delivery; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const text = `Login: ${typeof window !== "undefined" ? window.location.origin : ""}/login\nUsername: ${login}\nPassword: ${password}`;
   return (
     <Shell title={title} onClose={onClose}>
-      <p className="mb-3 text-sm text-muted">Share these securely. The password is shown only once; they can change it from their profile menu.</p>
+      <DeliveryNote d={delivery} />
+      <p className="mb-3 text-sm text-muted">The password is shown only once here; they can change it from their profile menu.</p>
       <pre className="rounded-xl bg-zinc-50 p-3 font-mono text-[13px] whitespace-pre-wrap ring-1 ring-black/5">{text}</pre>
       <button
         onClick={async () => {
@@ -300,5 +343,61 @@ function Secret({ login, password, title, onClose }: { login: string; password: 
         {copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? "Copied" : "Copy credentials"}
       </button>
     </Shell>
+  );
+}
+
+type Delivery = { emailed_to?: string | null; email_error?: string | null };
+
+/** "Sent to x" or why the login details weren't emailed. */
+function DeliveryNote({ d }: { d?: Delivery }) {
+  if (!d) return null;
+  return d.emailed_to ? (
+    <p className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-emerald-200">
+      <Mail className="size-4 shrink-0" /> Sent to <b className="font-semibold">{d.emailed_to}</b>
+    </p>
+  ) : (
+    <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200">
+      Not emailed: {d.email_error ?? "unknown error"}. Copy the details below and share them securely.
+    </p>
+  );
+}
+
+/** Small dialog to add or change where someone's login emails go. */
+function EmailDialog({ name, current, onClose, onSave }: { name: string; current: string | null; onClose: () => void; onSave: (email: string) => Promise<void> }) {
+  const [email, setEmail] = useState(current ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return createPortal(
+    <div className="fixed inset-0 z-60 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onClick={onClose}>
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError(null);
+          try {
+            await onSave(email.trim());
+          } catch (err) {
+            setError((err as Error).message);
+            setBusy(false);
+          }
+        }}
+        className="w-full max-w-sm space-y-3 rounded-3xl bg-white p-6 shadow-2xl"
+      >
+        <h2 className="text-lg font-semibold">Email for {name}</h2>
+        <p className="text-sm text-muted">Login details and password resets are sent here.</p>
+        <input type="email" required autoFocus className={field} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" />
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl px-4 py-2 text-sm font-medium text-muted hover:bg-zinc-100">
+            Cancel
+          </button>
+          <button disabled={busy} className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+            {busy && <Loader2 className="size-4 animate-spin" />} Save
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   );
 }

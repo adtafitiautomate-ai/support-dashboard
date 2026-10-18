@@ -4,6 +4,7 @@ import { errorResponse, HttpError, requireMvnoAdmin } from "@/lib/inbox/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { tempPassword } from "@/lib/admin";
 import { toLoginEmail } from "@/lib/login";
+import { contactEmailOf, mailCredentials, setContactEmail } from "@/lib/credentials-mail";
 import { audit, enforce, LIMITS } from "@/lib/security";
 import type { Profile } from "@/lib/types";
 
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest) {
         status: p?.status ?? "offline",
         is_platform_admin: !!p?.is_platform_admin,
         email: a?.email ?? "",
+        contact_email: contactEmailOf(a),
         disabled: !!a?.banned_until && new Date(a.banned_until) > new Date(),
         last_sign_in_at: a?.last_sign_in_at ?? null,
       };
@@ -53,7 +55,9 @@ const Body = z.discriminatedUnion("action", [
       .refine((v) => (v.includes("@") ? z.email().safeParse(v).success : /^[a-z0-9._-]{3,32}$/.test(v)), "Enter an email, or a username of 3–32 letters/digits"),
     role: Role,
     password: z.string().min(10).max(72).optional(),
+    email: z.email("Enter a valid email address").trim().toLowerCase(), // where the login details are sent
   }),
+  z.object({ action: z.literal("set_email"), mvnoId: z.guid(), userId: z.guid(), email: z.email("Enter a valid email address").trim().toLowerCase() }),
   z.object({ action: z.literal("set_role"), mvnoId: z.guid(), userId: z.guid(), role: Role }),
   z.object({ action: z.literal("remove"), mvnoId: z.guid(), userId: z.guid() }),
   z.object({ action: z.literal("reset_password"), mvnoId: z.guid(), userId: z.guid() }),
@@ -77,13 +81,14 @@ export async function POST(req: Request) {
         password,
         email_confirm: true,
         user_metadata: { full_name: body.full_name },
-        app_metadata: { invited: true },
+        app_metadata: { invited: true, contact_email: body.email },
       });
       if (error) throw new HttpError(409, /already/i.test(error.message) ? "That username/email is already taken. Choose another, or ask a super admin to add the existing person." : error.message);
       await db.from("profiles").upsert({ id: data.user.id, full_name: body.full_name });
       await db.from("mvno_members").insert({ mvno_id: mvno.id, user_id: data.user.id, role: body.role });
-      await audit(me, "user.created", { mvnoId: mvno.id, target: body.full_name, details: { login: email, role: body.role, by: "team" } });
-      return Response.json({ login: email, password });
+      const mailError = await mailCredentials({ to: body.email, name: body.full_name, login: email, password, kind: "welcome", mvnoName: mvno.name });
+      await audit(me, "user.created", { mvnoId: mvno.id, target: body.full_name, details: { login: email, role: body.role, by: "team", emailed: !mailError } });
+      return Response.json({ login: email, password, emailed_to: mailError ? null : body.email, email_error: mailError });
     }
 
     // Every other action targets an existing member of this MVNO.
@@ -91,11 +96,11 @@ export async function POST(req: Request) {
     if (!target) throw new HttpError(404, "That person isn't on this team");
     const tp = target.profiles as unknown as { full_name: string; is_platform_admin: boolean };
     if (tp.is_platform_admin && !me.is_platform_admin) throw new HttpError(403, "Super admins can only be changed by a super admin");
-    if (body.userId === me.id && body.action !== "reset_password") throw new HttpError(400, "You can't change your own access here");
+    if (body.userId === me.id && body.action !== "reset_password" && body.action !== "set_email") throw new HttpError(400, "You can't change your own access here");
 
     // Account-wide actions (password, disable) affect every MVNO the person belongs to:
     // only allowed if the actor administers all of them.
-    const accountWide = body.action === "reset_password" || body.action === "set_disabled";
+    const accountWide = body.action === "reset_password" || body.action === "set_disabled" || body.action === "set_email";
     if (accountWide && !me.is_platform_admin) {
       const { data: theirs } = await db.from("mvno_members").select("mvno_id").eq("user_id", body.userId);
       const { data: mine } = await db.from("mvno_members").select("mvno_id").eq("user_id", me.id).eq("role", "admin");
@@ -118,10 +123,17 @@ export async function POST(req: Request) {
       }
       case "reset_password": {
         const password = tempPassword();
-        const { error } = await db.auth.admin.updateUserById(body.userId, { password });
+        const { data: u, error } = await db.auth.admin.updateUserById(body.userId, { password });
         if (error) throw error;
-        await audit(me, "user.password_reset", { mvnoId: mvno.id, target: tp.full_name, details: { by: "team" } });
-        return Response.json({ password });
+        const to = contactEmailOf(u.user);
+        const mailError = await mailCredentials({ to, name: tp.full_name, login: u.user.email ?? "", password, kind: "reset" });
+        await audit(me, "user.password_reset", { mvnoId: mvno.id, target: tp.full_name, details: { by: "team", emailed: !mailError } });
+        return Response.json({ password, emailed_to: mailError ? null : to, email_error: mailError });
+      }
+      case "set_email": {
+        await setContactEmail(body.userId, body.email);
+        await audit(me, "user.email_set", { mvnoId: mvno.id, target: tp.full_name, details: { email: body.email, by: "team" } });
+        return Response.json({ ok: true });
       }
       case "set_disabled": {
         const { error } = await db.auth.admin.updateUserById(body.userId, { ban_duration: body.disabled ? "876000h" : "none" });
