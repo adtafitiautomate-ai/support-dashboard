@@ -277,6 +277,7 @@ export async function pickAgent(mvnoId: string): Promise<{ id: string; full_name
     .from("mvno_members")
     .select("user_id, max_concurrent, profiles!inner(id, full_name, status)")
     .eq("mvno_id", mvnoId)
+    .eq("role", "agent") // supervisors/admins take chats only by choice, never by auto-assignment
     .eq("profiles.status", "online")
     .gte("profiles.last_seen_at", new Date(Date.now() - 3 * 60_000).toISOString()); // live heartbeat
   if (!members?.length) return null;
@@ -300,12 +301,13 @@ export async function pickAgent(mvnoId: string): Promise<{ id: string; full_name
   return { id: p.id, full_name: p.full_name };
 }
 
-/** Anyone on this MVNO's team online with a live heartbeat (even if at full capacity). */
+/** Any agent on this MVNO's team online with a live heartbeat (even if at full capacity). */
 export async function anyAgentOnline(mvnoId: string) {
   const { count } = await supabaseAdmin()
     .from("mvno_members")
     .select("user_id, profiles!inner(status, last_seen_at)", { count: "exact", head: true })
     .eq("mvno_id", mvnoId)
+    .eq("role", "agent")
     .eq("profiles.status", "online")
     .gte("profiles.last_seen_at", new Date(Date.now() - 3 * 60_000).toISOString());
   return (count ?? 0) > 0;

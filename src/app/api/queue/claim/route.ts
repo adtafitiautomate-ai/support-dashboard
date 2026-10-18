@@ -12,7 +12,7 @@ export async function POST() {
     const { profile } = await requireAgent();
     if (profile.status !== "online") return Response.json({ claimed: [], waiting: 0 });
     const db = supabaseAdmin();
-    const { data: memberships } = await db.from("mvno_members").select("mvno_id, max_concurrent").eq("user_id", profile.id);
+    const { data: memberships } = await db.from("mvno_members").select("mvno_id, max_concurrent").eq("user_id", profile.id).eq("role", "agent"); // agents only
 
     const claimed: Pick<Conversation, "id" | "ticket_no" | "subject" | "followup_reason" | "mvno_id">[] = [];
     let waiting = 0;
