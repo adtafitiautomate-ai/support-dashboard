@@ -62,7 +62,7 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
       if (!res.ok) throw new Error(json.error ?? "Import failed");
       setResult({
         ok: true,
-        text: `Imported ${json.imported} location${json.imported === 1 ? "" : "s"}${json.removed ? `, replaced ${json.removed}` : ""}${json.skipped.length ? `, skipped ${json.skipped.length}` : ""}.`,
+        text: `Imported ${json.imported} location${json.imported === 1 ? "" : "s"}${json.no_gps ? ` (${json.no_gps} without GPS: customers find these by typing their area)` : ""}${json.removed ? `, replaced ${json.removed}` : ""}.`,
         skipped: json.skipped,
       });
       await load();
@@ -111,7 +111,7 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
           >
             {busy ? <Loader2 className="size-6 animate-spin text-muted" /> : <UploadCloud className="size-6 text-muted" />}
             <div className="mt-2 text-sm font-medium">Upload locations CSV</div>
-            <div className="text-xs text-muted">Columns: name, type, address, district, latitude, longitude, phone, hours, services</div>
+            <div className="text-xs text-muted">Columns: name, type, address, district, latitude, longitude, phone, hours, services. Latitude/longitude can be left empty for now.</div>
             <input
               ref={fileInput}
               type="file"
@@ -183,9 +183,18 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
                     <td className="px-3 py-1.5">
                       <span className="flex items-center gap-1.5">
                         {o.kind === "store" ? <Store className="size-3.5 shrink-0 text-muted" /> : <UserRound className="size-3.5 shrink-0 text-muted" />}
-                        <a href={`https://www.google.com/maps?q=${o.lat},${o.lng}`} target="_blank" rel="noreferrer" className="hover:underline">
-                          {o.name}
-                        </a>
+                        {o.lat !== null && o.lng !== null ? (
+                          <a href={`https://www.google.com/maps?q=${o.lat},${o.lng}`} target="_blank" rel="noreferrer" className="hover:underline">
+                            {o.name}
+                          </a>
+                        ) : (
+                          <>
+                            {o.name}
+                            <span className="rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200" title="Found by area name until GPS is added">
+                              no GPS
+                            </span>
+                          </>
+                        )}
                       </span>
                     </td>
                     <td className="px-3 py-1.5 text-muted">{o.address}</td>

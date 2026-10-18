@@ -62,6 +62,7 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("remove"), mvnoId: z.guid(), userId: z.guid() }),
   z.object({ action: z.literal("reset_password"), mvnoId: z.guid(), userId: z.guid() }),
   z.object({ action: z.literal("set_disabled"), mvnoId: z.guid(), userId: z.guid(), disabled: z.boolean() }),
+  z.object({ action: z.literal("delete"), mvnoId: z.guid(), userId: z.guid() }),
 ]);
 
 export async function POST(req: Request) {
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
 
     // Account-wide actions (password, disable) affect every MVNO the person belongs to:
     // only allowed if the actor administers all of them.
-    const accountWide = body.action === "reset_password" || body.action === "set_disabled" || body.action === "set_email";
+    const accountWide = body.action === "reset_password" || body.action === "set_disabled" || body.action === "set_email" || body.action === "delete";
     if (accountWide && !me.is_platform_admin) {
       const { data: theirs } = await db.from("mvno_members").select("mvno_id").eq("user_id", body.userId);
       const { data: mine } = await db.from("mvno_members").select("mvno_id").eq("user_id", me.id).eq("role", "admin");
@@ -129,6 +130,15 @@ export async function POST(req: Request) {
         const mailError = await mailCredentials({ to, name: tp.full_name, login: u.user.email ?? "", password, kind: "reset" });
         await audit(me, "user.password_reset", { mvnoId: mvno.id, target: tp.full_name, details: { by: "team", emailed: !mailError } });
         return Response.json({ password, emailed_to: mailError ? null : to, email_error: mailError });
+      }
+      case "delete": {
+        // Only disabled accounts can be deleted. Their chats, notes and tickets stay (unlinked).
+        const { data: u } = await db.auth.admin.getUserById(body.userId);
+        if (!u.user?.banned_until || new Date(u.user.banned_until) < new Date()) throw new HttpError(400, "Disable the account first, then delete it");
+        const { error } = await db.auth.admin.deleteUser(body.userId);
+        if (error) throw error;
+        await audit(me, "user.deleted", { mvnoId: mvno.id, target: tp.full_name, details: { login: u.user.email, by: "team" } });
+        return Response.json({ ok: true });
       }
       case "set_email": {
         await setContactEmail(body.userId, body.email);

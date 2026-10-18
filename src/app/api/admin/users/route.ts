@@ -29,6 +29,7 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set_membership"), user_id: z.guid(), mvno_id: z.guid(), role: Role.nullable() }), // null removes
   z.object({ action: z.literal("reset_password"), user_id: z.guid(), password: z.string().min(10).max(72).optional() }),
   z.object({ action: z.literal("set_disabled"), user_id: z.guid(), disabled: z.boolean() }),
+  z.object({ action: z.literal("delete"), user_id: z.guid() }),
   z.object({ action: z.literal("set_platform_admin"), user_id: z.guid(), value: z.boolean() }),
   z.object({ action: z.literal("rename"), user_id: z.guid(), full_name: z.string().trim().min(2).max(80) }),
 ]);
@@ -83,6 +84,17 @@ export async function POST(req: Request) {
         const mailError = await mailCredentials({ to, name, login: u.user.email ?? "", password, kind: "reset" });
         await audit(me, "user.password_reset", { target: name, details: { emailed: !mailError } });
         return Response.json({ password, emailed_to: mailError ? null : to, email_error: mailError });
+      }
+      case "delete": {
+        if (body.user_id === me.id) throw new HttpError(400, "You can't delete your own account");
+        // Only disabled accounts can be deleted. Their chats, notes and tickets stay (unlinked).
+        const { data: u } = await db.auth.admin.getUserById(body.user_id);
+        if (!u.user?.banned_until || new Date(u.user.banned_until) < new Date()) throw new HttpError(400, "Disable the account first, then delete it");
+        const name = await nameOf(body.user_id);
+        const { error } = await db.auth.admin.deleteUser(body.user_id);
+        if (error) throw error;
+        await audit(me, "user.deleted", { target: name, details: { login: u.user.email } });
+        return Response.json({ ok: true });
       }
       case "set_email": {
         await setContactEmail(body.user_id, body.email);

@@ -542,15 +542,15 @@ export async function askLocation(ctx: FlowCtx, purpose: "outlets" | "delivery",
     type: "location_request",
     body:
       purpose === "outlets"
-        ? `Share your location 📍 (tap the button below) and I'll send the nearest ${what}.`
+        ? `Share your location 📍 (tap the button below) and I'll send the nearest ${what}.\n\nOr just type your *town or area* (e.g. Wandegeya).`
         : "Share your delivery location 📍 (tap the button), or type your address.",
   });
 }
 
-/** Nearest outlets of a kind; falls back to any kind if none of that kind exist. */
+/** Nearest outlets of a kind (only those with GPS); falls back to any kind if none of that kind exist. */
 export async function nearestOutlets(mvnoId: string, at: { lat: number; lng: number }, kind?: OutletKind, limit = 3) {
-  const { data } = await supabaseAdmin().from("outlets").select("*").eq("mvno_id", mvnoId);
-  const all = (data ?? []) as Outlet[];
+  const { data } = await supabaseAdmin().from("outlets").select("*").eq("mvno_id", mvnoId).not("lat", "is", null).not("lng", "is", null);
+  const all = ((data ?? []) as Outlet[]).map((o) => ({ ...o, lat: o.lat!, lng: o.lng! }));
   const pool = kind ? all.filter((o) => (kind === "store" ? o.kind === "store" : o.kind !== "store")) : all;
   return (pool.length ? pool : all)
     .map((o) => ({ ...o, km: haversineKm(at, o) }))
@@ -559,12 +559,14 @@ export async function nearestOutlets(mvnoId: string, at: { lat: number; lng: num
 }
 
 export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }, kind?: OutletKind) {
-  await setState(ctx, {});
   const list = await nearestOutlets(ctx.mvno.id, at, kind);
   if (!list.length) {
-    await say(ctx, { type: "text", text: "I couldn't find an outlet near you yet, sorry." });
+    // Locations without GPS yet: ask for the area and search by name instead.
+    await setState(ctx, { flow: "outlets", awaiting: "location", data: { kind } });
+    await say(ctx, { type: "text", text: "Which *town or area* are you in? (e.g. Wandegeya, Masaka) I'll list the nearest ones there." });
     return;
   }
+  await setState(ctx, {});
   const kindIcon = { store: "🏬", agent: "🧑‍💼", kiosk: "🏪" } as const;
   await say(ctx, {
     type: "text",
@@ -580,6 +582,48 @@ export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }
   });
   const top = list[0];
   await say(ctx, { type: "location", lat: top.lat, lng: top.lng, name: top.name, address: top.address });
+}
+
+const AREA_STOP = new Set(["i", "im", "am", "in", "at", "near", "the", "my", "is", "area", "town", "place", "around", "stay", "live", "located", "from", "of", "and"]);
+
+/** Outlets whose name or address mentions the area the customer typed (for locations without GPS). */
+export async function showOutletsByArea(ctx: FlowCtx, text: string, kind?: OutletKind) {
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} ]/gu, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !AREA_STOP.has(w))
+    .slice(0, 4);
+  if (!words.length) {
+    await say(ctx, { type: "text", text: "Type the name of your town or area (e.g. Wandegeya), or share your location 📍." });
+    return;
+  }
+  const { data } = await supabaseAdmin()
+    .from("outlets")
+    .select("*")
+    .eq("mvno_id", ctx.mvno.id)
+    .or(words.flatMap((w) => [`name.ilike.%${w}%`, `address.ilike.%${w}%`]).join(","))
+    .limit(50);
+  const all = (data ?? []) as Outlet[];
+  const ofKind = kind ? all.filter((o) => (kind === "store" ? o.kind === "store" : o.kind !== "store")) : all;
+  const list = (ofKind.length ? ofKind : all).slice(0, 5);
+  if (!list.length) {
+    await say(ctx, {
+      type: "buttons",
+      body: `I couldn't find one in "${text.slice(0, 40)}" yet. Try a nearby town, or share your location 📍.`,
+      buttons: [{ id: "menu:main", title: "Main menu" }],
+    });
+    return; // keep waiting for another area or a location pin
+  }
+  await setState(ctx, {});
+  const kindIcon = { store: "🏬", agent: "🧑‍💼", kiosk: "🏪" } as const;
+  await say(ctx, {
+    type: "text",
+    text:
+      `*In ${text.slice(0, 40)}:*\n\n` +
+      list.map((o, i) => `${i + 1}. ${kindIcon[o.kind]} *${o.name}*\n   ${o.address}\n   🕒 ${o.hours ?? "–"}${o.phone ? `  ☎️ ${o.phone}` : ""}`).join("\n\n") +
+      `\n\n🏬 service centres: SIM swaps, eSIM, ${ctx.mvno.wallet_name}, device support · 🧑‍💼 agents: deposits, withdrawals, airtime & bundles`,
+  });
 }
 
 // ------------------------------------------------------------------ deliveries

@@ -52,21 +52,28 @@ export async function POST(req: Request) {
       const key = Object.entries(ALIASES).find(([, names]) => names.includes(norm(h)))?.[0];
       if (key && col[key] === undefined) col[key] = i;
     });
-    for (const required of ["name", "lat", "lng"]) {
+    // GPS is optional: locations without it are found by town/area name instead of distance.
+    for (const required of ["name"]) {
       if (col[required] === undefined) throw new HttpError(400, `Missing a "${required}" column. Expected headers like: name, type, address, district, latitude, longitude, phone, hours, services`);
     }
 
     const get = (r: string[], k: string) => (col[k] === undefined ? "" : (r[col[k]] ?? "").trim());
     const skipped: { line: number; reason: string }[] = [];
     const rows: Record<string, unknown>[] = [];
+    let noGps = 0;
     lines.forEach((r, i) => {
       const line = i + 2;
       const name = get(r, "name");
-      const lat = Number(get(r, "lat"));
-      const lng = Number(get(r, "lng"));
       if (!name) return skipped.push({ line, reason: "no name" });
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) {
-        return skipped.push({ line, reason: `invalid coordinates for "${name}"` });
+      const rawLat = get(r, "lat");
+      const rawLng = get(r, "lng");
+      let lat: number | null = Number(rawLat);
+      let lng: number | null = Number(rawLng);
+      if (!rawLat || !rawLng || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) {
+        if (rawLat || rawLng) skipped.push({ line, reason: `"${name}" imported without GPS (coordinates not valid)` });
+        lat = null;
+        lng = null;
+        noGps++;
       }
       const address = [get(r, "address"), get(r, "district")].filter(Boolean).join(", ");
       rows.push({
@@ -105,8 +112,8 @@ export async function POST(req: Request) {
       const { error } = await db.from("outlets").insert(rows.slice(i, i + 500));
       if (error) throw error;
     }
-    await audit(actor, "locations.imported", { mvnoId, target: file.name, details: { mode, imported: rows.length, removed, skipped: skipped.length } });
-    return Response.json({ imported: rows.length, removed, skipped });
+    await audit(actor, "locations.imported", { mvnoId, target: file.name, details: { mode, imported: rows.length, removed, skipped: skipped.length, no_gps: noGps } });
+    return Response.json({ imported: rows.length, removed, skipped, no_gps: noGps });
   } catch (e) {
     return errorResponse(e);
   }

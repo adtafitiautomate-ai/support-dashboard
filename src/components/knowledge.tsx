@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BookOpen, CheckCircle2, FileText, Globe, Link2, Loader2, Plus, RefreshCw, Search, Trash2, UploadCloud, X } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, FileText, Globe, Link2, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { useStore } from "@/lib/store";
 import type { KbArticle } from "@/lib/types";
@@ -240,6 +240,12 @@ export function KnowledgeView() {
 
           {editing && (
             <form onSubmit={saveArticle} className="mb-3 space-y-2 rounded-2xl border border-line bg-surface-2 p-3">
+              <div className="text-xs font-semibold">{editing.id ? "Edit article" : "New article"}</div>
+              {editing.source_id && (
+                <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-800 ring-1 ring-amber-200">
+                  From {sourceName(editing.source_id) ?? "a document"}. Your edits apply straight away, but re-training that document later replaces its articles.
+                </p>
+              )}
               <input className={input} placeholder="Question or topic, e.g. How do I check my balance?" value={editing.title ?? ""} onChange={(e) => setEditing({ ...editing, title: e.target.value })} required />
               <textarea rows={5} className={input} placeholder="The answer the bot should give: facts, steps, prices, codes" value={editing.body ?? ""} onChange={(e) => setEditing({ ...editing, body: e.target.value })} required />
               <input
@@ -277,6 +283,13 @@ export function KnowledgeView() {
                         <Badge key={t}>{t}</Badge>
                       ))}
                     </div>
+                  </button>
+                  <button
+                    title="Edit article"
+                    onClick={() => setEditing(a)}
+                    className="grid size-7 place-items-center rounded-lg text-muted transition hover:bg-surface hover:text-ink"
+                  >
+                    <Pencil className="size-3.5" />
                   </button>
                   <button
                     title="Delete article"

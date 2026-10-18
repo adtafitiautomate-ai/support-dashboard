@@ -145,8 +145,8 @@ export interface Outlet {
   name: string;
   kind: "store" | "agent" | "kiosk";
   address: string;
-  lat: number;
-  lng: number;
+  lat: number | null; // null until GPS is collected: found by area name instead
+  lng: number | null;
   phone: string | null;
   hours: string | null;
   services: string[];

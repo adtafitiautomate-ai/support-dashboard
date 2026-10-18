@@ -218,6 +218,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         });
       }
     }
+    if (state.flow === "outlets" && text && !isEscape(text)) return F.showOutletsByArea(ctx, text, state.data?.kind as F.OutletKind | undefined);
     if (state.flow === "delivery" && text.length > 8 && !isEscape(text)) {
       return F.createDelivery(ctx, (state.data?.item as "sim" | "esim") ?? "sim", { address: text });
     }

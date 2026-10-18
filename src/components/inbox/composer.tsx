@@ -151,8 +151,9 @@ export function Composer({ conversation: c }: { conversation: Conversation }) {
       await send({ type: "location_request", body: "Please share your location 📍 so I can find the nearest shop or agent." });
       return;
     }
-    const { data } = await supabaseBrowser().from("outlets").select("*").eq("mvno_id", c.mvno_id);
+    const { data } = await supabaseBrowser().from("outlets").select("*").eq("mvno_id", c.mvno_id).not("lat", "is", null);
     const nearest = ((data ?? []) as Outlet[])
+      .filter((o): o is Outlet & { lat: number; lng: number } => o.lat !== null && o.lng !== null)
       .map((o) => ({ ...o, km: haversineKm(loc, o) }))
       .sort((a, b) => a.km - b.km)[0];
     if (nearest) await send({ type: "location", lat: nearest.lat, lng: nearest.lng, name: nearest.name, address: `${nearest.address} · ${nearest.hours ?? ""}` });

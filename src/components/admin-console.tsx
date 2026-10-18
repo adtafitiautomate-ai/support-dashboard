@@ -239,6 +239,7 @@ function UserRow({
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editingEmail, setEditingEmail] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const available = mvnos.filter((m) => !u.memberships.some((x) => x.mvno_id === m.id));
   const run = async (b: Record<string, unknown>) => {
     setBusy(true);
@@ -360,6 +361,29 @@ function UserRow({
           >
             {u.disabled ? "Enable" : "Disable"}
           </button>
+          {u.disabled &&
+            (confirmDelete ? (
+              <span className="flex items-center gap-1 rounded-lg bg-red-50 px-1.5 text-xs text-red-700 ring-1 ring-red-200">
+                Delete for good?
+                <button
+                  disabled={busy}
+                  onClick={async () => {
+                    setConfirmDelete(false);
+                    await run({ action: "delete" });
+                  }}
+                  className="rounded-md bg-red-600 px-1.5 py-0.5 font-medium text-white"
+                >
+                  Yes
+                </button>
+                <button onClick={() => setConfirmDelete(false)} className="px-1 py-0.5 font-medium">
+                  No
+                </button>
+              </span>
+            ) : (
+              <button disabled={busy} onClick={() => setConfirmDelete(true)} className="rounded-lg px-2 py-1 text-xs font-medium text-danger hover:bg-white">
+                Delete
+              </button>
+            ))}
         </div>
       </td>
     </tr>

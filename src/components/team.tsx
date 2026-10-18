@@ -42,6 +42,7 @@ export function TeamView() {
   const [adding, setAdding] = useState(false);
   const [secret, setSecret] = useState<{ login: string; password: string; title: string; delivery?: Delivery } | null>(null);
   const [editingEmail, setEditingEmail] = useState<Member | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -185,6 +186,29 @@ export function TeamView() {
                             >
                               {m.disabled ? "Enable" : "Disable"}
                             </button>
+                            {m.disabled &&
+                              (confirmDelete === m.id ? (
+                                <span className="flex items-center gap-1 rounded-lg bg-red-50 px-1.5 text-xs text-red-700 ring-1 ring-red-200">
+                                  Delete for good?
+                                  <button
+                                    disabled={busy === m.id}
+                                    onClick={async () => {
+                                      setConfirmDelete(null);
+                                      await act(m.id, { action: "delete" });
+                                    }}
+                                    className="rounded-md bg-red-600 px-1.5 py-0.5 font-medium text-white"
+                                  >
+                                    Yes
+                                  </button>
+                                  <button onClick={() => setConfirmDelete(null)} className="px-1 py-0.5 font-medium">
+                                    No
+                                  </button>
+                                </span>
+                              ) : (
+                                <button disabled={busy === m.id} onClick={() => setConfirmDelete(m.id)} className="rounded-lg px-2 py-1 text-xs font-medium text-danger hover:bg-white">
+                                  Delete
+                                </button>
+                              ))}
                             <button disabled={busy === m.id} onClick={() => act(m.id, { action: "remove" })} className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-white hover:text-danger">
                               Remove from team
                             </button>
