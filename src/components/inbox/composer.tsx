@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LayoutList, Loader2, MapPin, Send, Sparkles, Store, Zap } from "lucide-react";
+import { FileText, Film, Image as ImageIcon, LayoutList, Loader2, MapPin, Mic, Paperclip, Send, Sparkles, Store, X, Zap } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { removeMessage, upsertMessage, useStore } from "@/lib/store";
 import type { Bundle, CannedResponse, Conversation, Message, Outlet } from "@/lib/types";
@@ -9,6 +9,7 @@ import type { OutboundMessage } from "@/lib/whatsapp/types";
 import { api, Button, cx, Kbd, useNow } from "@/components/ui";
 import { bundleSummary, formatMoney, haversineKm } from "@/lib/format";
 import { useWorkspace } from "@/components/workspace";
+import { ACCEPT, classifyMedia, type MediaKind } from "@/lib/whatsapp/outbound-media";
 import { Dropdown, MenuItem } from "./thread";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -23,6 +24,46 @@ export function Composer({ conversation: c }: { conversation: Conversation }) {
   const [canned, setCanned] = useState<CannedResponse[]>(cannedCache.get(c.mvno_id) ?? []);
   const [pick, setPick] = useState(0);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [attachment, setAttachment] = useState<{ file: File; kind: MediaKind; preview?: string } | null>(null);
+
+  function pickFile(file: File) {
+    const r = classifyMedia(file.type, file.size);
+    if ("error" in r) return setError(r.error);
+    setError(null);
+    setMode("reply");
+    setAttachment({ file, kind: r.kind, preview: r.kind === "image" ? URL.createObjectURL(file) : undefined });
+    ta.current?.focus();
+  }
+  function clearAttachment() {
+    if (attachment?.preview) URL.revokeObjectURL(attachment.preview);
+    setAttachment(null);
+  }
+
+  /** Uploads straight to storage, then sends it (the typed text becomes the caption). */
+  async function sendAttachment() {
+    if (!attachment) return;
+    const { file, kind } = attachment;
+    setError(null);
+    setBusy("send");
+    try {
+      const up = await api<{ path: string; token: string }>(`/api/conversations/${c.id}/attachments`, { filename: file.name, mime: file.type, size: file.size });
+      const { error: upErr } = await supabaseBrowser().storage.from("wa-media").uploadToSignedUrl(up.path, up.token, file, { contentType: file.type });
+      if (upErr) throw new Error(upErr.message);
+      const caption = text.trim();
+      const { message } = await api<{ message: Message }>(`/api/conversations/${c.id}/messages`, {
+        out: { type: "media", kind, path: up.path, mime: file.type, filename: file.name, size: file.size, ...(caption ? { caption } : {}) },
+      });
+      upsertMessage(message);
+      setText("");
+      clearAttachment();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+      ta.current?.focus();
+    }
+  }
   const contact = useStore((s) => s.contacts.get(c.contact_id));
   const mvno = useStore((s) => s.mvnos.get(c.mvno_id));
   const me = useStore((s) => s.me);
@@ -195,7 +236,39 @@ export function Composer({ conversation: c }: { conversation: Conversation }) {
         </span>
       </div>
 
-      <div className="relative px-3 py-2">
+      <div
+        className="relative px-3 py-2"
+        onDragOver={(e) => mode === "reply" && e.preventDefault()}
+        onDrop={(e) => {
+          const f = e.dataTransfer.files[0];
+          if (f && mode === "reply") {
+            e.preventDefault();
+            pickFile(f);
+          }
+        }}
+      >
+        {attachment && (
+          <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-surface-2 p-2 ring-1 ring-line">
+            {attachment.preview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={attachment.preview} alt="" className="size-12 rounded-lg object-cover" />
+            ) : (
+              <span className="grid size-12 place-items-center rounded-lg bg-surface text-muted">
+                {attachment.kind === "video" ? <Film className="size-5" /> : attachment.kind === "audio" ? <Mic className="size-5" /> : attachment.kind === "image" ? <ImageIcon className="size-5" /> : <FileText className="size-5" />}
+              </span>
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium">{attachment.file.name}</span>
+              <span className="block text-[11px] text-muted">
+                {attachment.kind} · {attachment.file.size >= 1048576 ? `${(attachment.file.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(attachment.file.size / 1024))} KB`}
+                {attachment.kind !== "audio" && " · type a caption below (optional)"}
+              </span>
+            </span>
+            <button onClick={clearAttachment} disabled={busy === "send"} className="grid size-7 place-items-center rounded-full text-muted hover:bg-surface hover:text-ink" aria-label="Remove attachment">
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
         {matches.length > 0 && (
           <div className="absolute right-3 bottom-full left-3 mb-1 overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
             {matches.map((r, i) => (
@@ -233,15 +306,49 @@ export function Composer({ conversation: c }: { conversation: Conversation }) {
             }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              void send();
+              void (attachment ? sendAttachment() : send());
             }
           }}
-          placeholder={mode === "note" ? "Add a note for your team (not sent to the customer)…" : `Reply to ${contact?.name?.split(" ")[0] ?? "customer"} on WhatsApp…`}
+          onPaste={(e) => {
+            const f = e.clipboardData.files[0];
+            if (f && mode === "reply") {
+              e.preventDefault();
+              pickFile(f);
+            }
+          }}
+          placeholder={
+            attachment
+              ? "Add a caption (optional)…"
+              : mode === "note"
+                ? "Add a note for your team (not sent to the customer)…"
+                : `Reply to ${contact?.name?.split(" ")[0] ?? "customer"} on WhatsApp…`
+          }
           className="w-full resize-none bg-transparent px-1 py-1 text-[14px] outline-none placeholder:text-muted"
         />
       </div>
 
       <div className="flex items-center gap-1.5 px-3 pb-2.5">
+        <input
+          ref={fileInput}
+          type="file"
+          accept={ACCEPT}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) pickFile(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => fileInput.current?.click()}
+          disabled={!!busy || mode === "note"}
+          title="Attach a photo, video, audio or document (or paste / drag it in)"
+          aria-label="Attach file"
+        >
+          <Paperclip className="size-3.5" />
+        </Button>
         <Button size="sm" variant="ghost" onClick={aiDraft} disabled={!!busy} title="Draft a reply with AI. Type a short instruction first to steer it.">
           {busy === "ai" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
           AI draft
@@ -273,8 +380,8 @@ export function Composer({ conversation: c }: { conversation: Conversation }) {
         </Dropdown>
         {error && <span className="truncate text-xs text-danger">{error}</span>}
         <button
-          onClick={() => send()}
-          disabled={!text.trim() || busy === "send"}
+          onClick={() => (attachment ? sendAttachment() : send())}
+          disabled={(!text.trim() && !attachment) || busy === "send"}
           title={mode === "note" ? "Add note" : "Send"}
           className={cx(
             "ml-auto grid size-9 place-items-center rounded-full text-white shadow-sm transition hover:scale-105 disabled:opacity-40 disabled:hover:scale-100",

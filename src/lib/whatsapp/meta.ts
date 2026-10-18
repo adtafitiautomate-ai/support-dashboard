@@ -78,6 +78,16 @@ export function toMetaPayload(to: string, msg: OutboundMessage): Record<string, 
           action: { name: "cta_url", parameters: { display_text: clip(msg.buttonText, 20), url: msg.url } },
         },
       };
+    case "media":
+      return {
+        ...base,
+        type: msg.kind,
+        [msg.kind]: {
+          link: msg.link,
+          ...(msg.caption && msg.kind !== "audio" ? { caption: clip(msg.caption, 1024) } : {}),
+          ...(msg.kind === "document" ? { filename: msg.filename ?? "document" } : {}),
+        },
+      };
     case "template":
       return {
         ...base,

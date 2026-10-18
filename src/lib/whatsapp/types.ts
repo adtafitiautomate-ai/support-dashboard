@@ -24,7 +24,9 @@ export type OutboundMessage =
   | { type: "location"; lat: number; lng: number; name?: string; address?: string }
   | { type: "location_request"; body: string }
   | { type: "cta_url"; body: string; buttonText: string; url: string }
-  | { type: "template"; name: string; language: string; params?: string[] };
+  | { type: "template"; name: string; language: string; params?: string[] }
+  /** An agent's attachment, stored in our bucket at `path`; `link` is a signed URL added at send time. */
+  | { type: "media"; kind: "image" | "video" | "audio" | "document"; path: string; mime: string; filename?: string; caption?: string; size?: number; link?: string };
 
 /** Normalized inbound message from any provider. */
 export interface InboundMessage {
@@ -56,6 +58,7 @@ export interface StatusUpdate {
 
 /** Human-readable preview text for storage and the inbox list. */
 export function outboundPreview(msg: OutboundMessage): string {
+  if (msg.type === "media") return msg.caption?.trim() || (msg.kind === "document" ? `📎 ${msg.filename ?? "Document"}` : `[${msg.kind}]`);
   switch (msg.type) {
     case "text":
       return msg.text;

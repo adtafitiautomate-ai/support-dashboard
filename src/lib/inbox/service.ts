@@ -186,9 +186,13 @@ export async function sendMessage(
       direction: "out",
       sender_type: opts.senderType,
       sender_id: opts.senderId ?? null,
-      type: out.type,
+      type: out.type === "media" ? out.kind : out.type,
       body: outboundPreview(out),
-      payload: { out },
+      // Media rides the same viewer as customer media (/api/media/:id reads mediaPath).
+      payload:
+        out.type === "media"
+          ? { out, mediaId: "agent-upload", mediaPath: out.path, mime: out.mime, filename: out.filename, size: out.size }
+          : { out },
       status: "queued",
     })
     .select()
@@ -208,7 +212,14 @@ export async function sendMessage(
   }
 
   try {
-    const waMessageId = await metaSend(creds.phoneNumberId, creds.token, toMetaPayload(contact.wa_id, out));
+    let toSend = out;
+    if (out.type === "media") {
+      // Meta downloads the file itself from a short-lived signed link.
+      const { data: signed, error: signErr } = await db.storage.from("wa-media").createSignedUrl(out.path, 3600);
+      if (signErr || !signed) throw signErr ?? new Error("Could not prepare the file");
+      toSend = { ...out, link: signed.signedUrl };
+    }
+    const waMessageId = await metaSend(creds.phoneNumberId, creds.token, toMetaPayload(contact.wa_id, toSend));
     await db.from("messages").update({ status: "sent", wa_message_id: waMessageId }).eq("id", row.id);
     return { ...row, status: "sent", wa_message_id: waMessageId };
   } catch (e) {

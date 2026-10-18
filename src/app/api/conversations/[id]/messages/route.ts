@@ -42,6 +42,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
 
     const out: OutboundMessage | undefined = body.out ?? (body.text?.trim() ? { type: "text", text: body.text.trim() } : undefined);
     if (!out) throw new HttpError(400, "Empty message");
+    // Attachments must be files uploaded for this conversation (see /attachments).
+    if (out.type === "media" && !out.path.startsWith(`${conv.mvno_id}/out/${conv.id}/`)) throw new HttpError(400, "Invalid attachment");
+    if (out.type === "media") delete out.link;
 
     // WhatsApp only allows free-form messages within 24h of the customer's last message.
     const windowOpen = conv.last_inbound_at && Date.now() - new Date(conv.last_inbound_at).getTime() < WINDOW_MS;
