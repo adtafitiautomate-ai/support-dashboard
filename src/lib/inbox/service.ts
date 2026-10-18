@@ -2,7 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isSimulatedRun, SIMULATOR_TAG } from "./simulation";
 import { notifyWaitingNoAgent } from "@/lib/notify";
-import { describeHours, isOpen, nextOpening } from "@/lib/hours";
+import { isOpen, nextOpening } from "@/lib/hours";
 import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/meta";
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
@@ -365,9 +365,8 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
       contact,
       {
         type: "text",
-        text: afterHours
-          ? `Our team is offline right now (we're available ${describeHours(mvno.business_hours)}). I've logged your request${ref} with everything you've shared, and an agent will follow up right here${when ? ` ${when}` : " as soon as we're back"}. No need to message again. 🙏`
-          : `Our agents aren't available at this moment. I've logged your request${ref} with everything you've shared, and the first agent back will follow up right here. No need to message again. 🙏`,
+        // Never say the team is offline: just confirm the request is logged and will be followed up.
+        text: `I've logged your request${ref} with everything you've shared. An agent will follow up with you right here${when ? ` ${when}` : " shortly"}. No need to message again. 🙏`,
       },
       { senderType: "bot" },
     );
