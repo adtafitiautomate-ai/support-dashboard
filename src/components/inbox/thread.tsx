@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, Bot, CheckCircle2, ChevronDown, Clock3, PanelRight, RotateCcw, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowLeft, Bot, CheckCircle2, ChevronDown, Clock3, PanelRight, RotateCcw, UserPlus } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { getState, setMessages, upsertConversation, useStore } from "@/lib/store";
 import type { Conversation, Message, Priority } from "@/lib/types";
@@ -13,7 +13,7 @@ import { SlaChip } from "./sla";
 
 const statusTone = { bot: "violet", open: "green", pending: "amber", resolved: "neutral" } as const;
 
-export function Thread({ conversation: c, onTogglePanel }: { conversation: Conversation; onTogglePanel: () => void }) {
+export function Thread({ conversation: c, onTogglePanel, onBack }: { conversation: Conversation; onTogglePanel: () => void; onBack?: () => void }) {
   const now = useNow(1000);
   const s = useStore((s) => s);
   const contact = s.contacts.get(c.contact_id);
@@ -85,27 +85,34 @@ export function Thread({ conversation: c, onTogglePanel }: { conversation: Conve
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <header className="flex items-center gap-3 border-b border-line/70 px-5 py-3">
+      <header className="flex items-center gap-2 border-b border-line/70 px-2 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
+        {onBack && (
+          <button onClick={onBack} className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-ink lg:hidden" aria-label="Back to chats">
+            <ArrowLeft className="size-5" />
+          </button>
+        )}
         <Avatar name={contact?.name ?? contact?.wa_id ?? "?"} size={36} />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 lg:flex-none">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-semibold">{contact?.name ?? (contact && formatPhone(contact.wa_id))}</span>
             <Badge tone={statusTone[c.status]}>{c.status === "bot" ? "With bot" : c.status}</Badge>
-            <SlaChip conversation={c} now={now} />
+            <span className="hidden sm:inline">
+              <SlaChip conversation={c} now={now} />
+            </span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted">
+          <div className="flex min-w-0 items-center gap-2 truncate text-xs text-muted">
             {contact && <span>{formatPhone(contact.wa_id)}</span>}
             {mvno && <MvnoTag name={mvno.name} color={mvno.brand_color} />}
             {c.ticket_no && <span>#{c.ticket_no}</span>}
           </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
           <select
             value={c.priority}
             onChange={(e) => act({ action: "priority", priority: e.target.value as Priority })}
             className={cx(
-              "h-8 rounded-lg border border-line bg-surface px-2 text-xs font-medium",
+              "hidden h-8 rounded-lg border border-line bg-surface px-2 text-xs font-medium sm:block",
               c.priority === "urgent" && "text-danger",
               c.priority === "high" && "text-warn",
             )}
@@ -122,11 +129,11 @@ export function Thread({ conversation: c, onTogglePanel }: { conversation: Conve
             label={
               assignee ? (
                 <>
-                  <Avatar name={assignee.full_name} size={18} /> {assignee.full_name.split(" ")[0]}
+                  <Avatar name={assignee.full_name} size={18} /> <span className="hidden sm:inline">{assignee.full_name.split(" ")[0]}</span>
                 </>
               ) : (
                 <>
-                  <UserPlus className="size-4" /> Assign
+                  <UserPlus className="size-4" /> <span className="hidden sm:inline">Assign</span>
                 </>
               )
             }
@@ -152,12 +159,12 @@ export function Thread({ conversation: c, onTogglePanel }: { conversation: Conve
 
           {c.status === "resolved" ? (
             <Button onClick={() => act({ action: "reopen" })}>
-              <RotateCcw className="size-4" /> Reopen
+              <RotateCcw className="size-4" /> <span className="hidden sm:inline">Reopen</span>
             </Button>
           ) : (
             <div className="flex">
               <Button variant="primary" className="rounded-r-none" onClick={() => act({ action: "resolve", csat: true })} title="Resolve and send CSAT survey (e)">
-                <CheckCircle2 className="size-4" /> Resolve
+                <CheckCircle2 className="size-4" /> <span className="hidden sm:inline">Resolve</span>
               </Button>
               <Dropdown label={<ChevronDown className="size-4" />} buttonClass="rounded-l-none border-l-0 px-1.5" align="right" primary>
                 {(close) => (

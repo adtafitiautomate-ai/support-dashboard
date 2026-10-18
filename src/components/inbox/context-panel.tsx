@@ -86,7 +86,7 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
   const sentimentEmoji = { positive: "🙂", neutral: "😐", negative: "😠" } as const;
 
   return (
-    <aside className="card flex w-[310px] shrink-0 flex-col overflow-hidden">
+    <aside className="card flex w-full shrink-0 flex-col overflow-hidden lg:w-[310px]">
       <div className="flex items-center justify-between px-4 pt-3.5">
         <span className="text-[13px] font-medium text-muted">Profile</span>
         <span className="text-[11px] text-muted">{c.ticket_no ? `Ticket #${c.ticket_no}` : "Bot chat"}</span>

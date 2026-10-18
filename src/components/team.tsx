@@ -74,7 +74,7 @@ export function TeamView() {
   const mvnoName = mvnos.find((m) => m.id === mvnoId)?.name ?? "";
 
   return (
-    <div className="h-full overflow-y-auto px-6 pb-6">
+    <div className="h-full overflow-y-auto px-3 sm:px-6 pb-6">
       <PageHeader
         title="Team"
         subtitle={

@@ -118,7 +118,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   return (
     <div className="flex flex-wrap items-end gap-3 pb-4">
       <div>
-        <h1 className="text-[28px] leading-tight font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-[22px] leading-tight font-semibold tracking-tight sm:text-[28px]">{title}</h1>
         {subtitle && <div className="mt-1 flex items-center gap-1.5 text-[13px] text-muted">{subtitle}</div>}
       </div>
       {actions && <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>}
@@ -141,17 +141,17 @@ const NAV = [
 
 function TopBar() {
   return (
-    <header className="relative z-30 flex items-center gap-3 px-6 pt-4 pb-3">
+    <header className="relative z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-3 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3">
       <Link href="/inbox" className="flex items-center gap-2">
         <span className="grid size-9 place-items-center rounded-xl bg-surface text-ink ring-1 ring-black/10 shadow-sm">
           <MessageCircle className="size-5" />
         </span>
         <span className="hidden text-lg font-semibold tracking-tight sm:block">Tuongee</span>
       </Link>
-      <div className="flex flex-1 justify-center">
+      <div className="order-last flex w-full justify-center md:order-none md:w-auto md:flex-1">
         <PillNav />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2 md:ml-0">
         <LiveChip />
         <Notifications />
         <ProfileMenu />
@@ -181,7 +181,7 @@ function PillNav() {
   }, [active, isManager]);
 
   return (
-    <nav className="relative flex items-center gap-0.5 rounded-full glass p-1">
+    <nav className="relative flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full glass p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {pill && (
         <span
           className="absolute top-1 bottom-1 rounded-full bg-surface shadow-sm ring-1 ring-black/5 transition-all duration-300 ease-out"
@@ -196,7 +196,7 @@ function PillNav() {
             refs.current[href] = el;
           }}
           className={cx(
-            "relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors",
+            "relative z-10 flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors",
             active === href ? "text-ink" : "text-muted hover:text-ink",
           )}
         >

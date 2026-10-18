@@ -78,7 +78,7 @@ export function Simulator() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto px-6 pb-6 lg:flex-row">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto px-3 sm:px-6 pb-6 lg:flex-row">
       <div className="card h-fit space-y-4 p-6 lg:w-80">
         <div>
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight">Simulator</h1>

@@ -100,7 +100,7 @@ export function ReportsView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-6 pb-6">
+    <div className="h-full overflow-y-auto px-3 sm:px-6 pb-6">
       <PageHeader
         title="Reports"
         subtitle={

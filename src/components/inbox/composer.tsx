@@ -231,7 +231,7 @@ export function Composer({ conversation: c }: { conversation: Conversation }) {
             {m === "reply" ? "Reply" : "Internal note"}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-1 text-[11px] text-muted">
+        <span className="ml-auto hidden items-center gap-1 text-[11px] text-muted sm:flex">
           <Kbd>/</Kbd> saved replies · <Kbd>Enter</Kbd> send · <Kbd>Shift+Enter</Kbd> new line
         </span>
       </div>

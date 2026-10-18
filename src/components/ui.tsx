@@ -180,3 +180,18 @@ export function Pager({ page, pageSize, total, onPage, label = "items" }: { page
     </div>
   );
 }
+
+const NARROW = "(max-width: 1023px)";
+function subscribeNarrow(cb: () => void) {
+  const mq = window.matchMedia(NARROW);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+/** True on phones and small tablets (below the lg breakpoint). */
+export function useIsNarrow() {
+  return useSyncExternalStore(
+    subscribeNarrow,
+    () => window.matchMedia(NARROW).matches,
+    () => false,
+  );
+}

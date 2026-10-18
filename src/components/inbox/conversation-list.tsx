@@ -72,7 +72,7 @@ export function ConversationList(props: { list: Conversation[]; view: InboxView;
   }
 
   return (
-    <aside className="card flex w-[330px] shrink-0 flex-col overflow-hidden">
+    <aside className="card flex w-full shrink-0 flex-col overflow-hidden lg:w-[330px]">
       <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
         <span className="text-[13px] font-medium text-muted">{VIEWS.find((v) => v.id === props.view)?.label}</span>
         <span className="text-xs text-muted tabular-nums">{props.list.length}</span>

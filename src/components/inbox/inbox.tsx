@@ -5,7 +5,7 @@ import { MessagesSquare, PenSquare, Radio, Search } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useWorkspace } from "@/components/workspace";
 import { PageHeader } from "@/components/app-shell";
-import { cx, Empty, Kbd } from "@/components/ui";
+import { cx, Empty, Kbd, useIsNarrow } from "@/components/ui";
 import { ConversationList, filterConversations, inView, VIEWS, type InboxView } from "./conversation-list";
 import { Thread } from "./thread";
 import { ContextPanel } from "./context-panel";
@@ -25,6 +25,8 @@ export function Inbox() {
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("c"),
   );
   const [showPanel, setShowPanel] = useState(true);
+  const narrow = useIsNarrow();
+  const [mobilePanel, setMobilePanel] = useState(false);
   const [composing, setComposing] = useState(false);
   const search = useRef<HTMLInputElement>(null);
 
@@ -77,7 +79,9 @@ export function Inbox() {
   const conversation = selected ? s.conversations.get(selected) : undefined;
 
   return (
-    <div className="flex h-full flex-col px-6 pb-5">
+    <div className="flex h-full flex-col px-3 pb-3 sm:px-6 sm:pb-5">
+      {/* On phones an open chat takes the whole screen (WhatsApp-style). */}
+      <div className={cx(selected && "hidden lg:block")}>
       <PageHeader
         title="Messages"
         subtitle={
@@ -96,7 +100,7 @@ export function Inbox() {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <label className="flex w-full max-w-xs items-center gap-2 rounded-full bg-surface px-3.5 py-2 shadow-sm ring-1 ring-black/5 dark:ring-white/5">
+        <label className="flex w-full items-center gap-2 rounded-full bg-surface px-3.5 py-2 shadow-sm ring-1 ring-black/5 sm:max-w-xs dark:ring-white/5">
           <Search className="size-4 text-muted" />
           <input
             ref={search}
@@ -105,9 +109,11 @@ export function Inbox() {
             placeholder="Search messages"
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
           />
-          <Kbd>Ctrl K</Kbd>
+          <span className="hidden sm:inline">
+            <Kbd>Ctrl K</Kbd>
+          </span>
         </label>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
           {mvnos.length > 1 && (
             <select
               value={mvnoFilter}
@@ -122,13 +128,13 @@ export function Inbox() {
               ))}
             </select>
           )}
-          <div className="flex glass rounded-full p-1">
+          <div className="flex max-w-full overflow-x-auto rounded-full glass p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {VIEWS.map((v) => (
               <button
                 key={v.id}
                 onClick={() => setView(v.id)}
                 className={cx(
-                  "flex items-center gap-1 rounded-full px-3 py-1 text-[13px] font-medium transition",
+                  "flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-[13px] font-medium transition",
                   view === v.id ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink",
                 )}
               >
@@ -140,17 +146,39 @@ export function Inbox() {
         </div>
       </div>
 
+      </div>
+
       <div className="flex min-h-0 flex-1 gap-4">
-        <ConversationList list={list} view={view} selected={selected} onSelect={select} />
-        <section className="card flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className={cx("min-h-0 w-full lg:flex lg:w-auto", selected ? "hidden" : "flex")}>
+          <ConversationList list={list} view={view} selected={selected} onSelect={select} />
+        </div>
+        <section className={cx("card min-w-0 flex-1 flex-col overflow-hidden", selected ? "flex" : "hidden lg:flex")}>
           {conversation ? (
-            <Thread key={conversation.id} conversation={conversation} onTogglePanel={() => setShowPanel((v) => !v)} />
+            <Thread
+              key={conversation.id}
+              conversation={conversation}
+              onBack={() => select(null)}
+              onTogglePanel={() => (narrow ? setMobilePanel(true) : setShowPanel((v) => !v))}
+            />
           ) : (
             <Empty icon={<MessagesSquare className="size-6" />} title="Pick a conversation" hint="Use j / k to move through the list. New chats appear instantly." />
           )}
         </section>
-        {conversation && showPanel && <ContextPanel key={conversation.contact_id} conversation={conversation} />}
+        {conversation && showPanel && !narrow && <ContextPanel key={conversation.contact_id} conversation={conversation} />}
       </div>
+      {/* Phones: customer details slide over the chat. */}
+      {conversation && narrow && mobilePanel && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-[2px]" onClick={() => setMobilePanel(false)}>
+          <div className="flex h-full w-full max-w-sm flex-col p-2" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setMobilePanel(false)} className="mb-2 self-end rounded-full bg-white px-3 py-1.5 text-xs font-medium shadow">
+              Close
+            </button>
+            <div className="flex min-h-0 flex-1">
+              <ContextPanel key={conversation.contact_id} conversation={conversation} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {composing && (
         <NewConversation

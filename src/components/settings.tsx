@@ -24,7 +24,7 @@ export function SettingsView() {
   const mvno = mvnos.find((m) => m.id === mvnoId);
 
   return (
-    <div className="h-full overflow-y-auto px-6 pb-6">
+    <div className="h-full overflow-y-auto px-3 sm:px-6 pb-6">
       <div className="mx-auto max-w-4xl">
         <PageHeader
           title="Settings"
