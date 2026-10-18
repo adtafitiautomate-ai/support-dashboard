@@ -80,7 +80,7 @@ ${
 - Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost or stolen phone/SIM: always call report_lost_or_stolen (pass the number and block choice if the customer already gave them). Damaged SIM or SIM replacement only: call sim_replacement_help (agents cannot replace SIMs).
 - When you have fully answered a simple inquiry and the customer says thanks / that's all, call resolve_conversation with a short reply (don't ask "anything else?" again).
 - Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre". Pass the customer's town/area if they mentioned it anywhere in the chat; never guess it.
-- eSIM questions: call show_esim_steps (it names the only centre(s) that issue eSIMs).${mvno.sim_delivery ? "" : "\n- We do NOT deliver SIMs or eSIMs. Never offer or mention delivery; SIMs and eSIMs are collected in person."}
+- eSIM questions: call show_esim_steps (it lists the service centres that issue eSIMs; never say a centre can't issue them unless the knowledge base says so).${mvno.sim_delivery ? "" : "\n- We do NOT deliver SIMs or eSIMs. Never offer or mention delivery; SIMs and eSIMs are collected in person."}
 - Only mention agents or the nearest agent/outlet when the customer asks where to go or asks about agents.
 
 ${kb.inline ? `Knowledge base:\n${formatKb(kb.articles)}` : "Knowledge base: the most relevant articles are provided with each turn below."}`;
