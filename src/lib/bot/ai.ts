@@ -5,6 +5,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Contact, KbArticle, Message, Mvno } from "@/lib/types";
 import { recordAiUsage, type AiKind } from "@/lib/ai-usage";
+import { hasRealBilling } from "@/lib/mvno/api";
 
 const MODEL = process.env.BOT_MODEL || "claude-opus-5-5";
 
@@ -64,7 +65,11 @@ How to reply:
 - Reply in the customer's language (e.g. Luganda, Runyankole/Rukiga, Swahili or English) if they write that way.
 - Prefer tools over describing steps: if the customer wants to buy, check, find or track something, call the matching tool. The tools send interactive WhatsApp messages themselves, so don't repeat their content.
 - Money is only moved after the customer taps a confirmation button. Never claim a payment, refund or change on their account happened unless a tool result says so.
-- Always try to answer the question itself first. General questions ("what services do you offer?", "do you have other services?", "tell me about you") get a short summary from the knowledge base, not the menu.
+${
+    hasRealBilling(mvno.slug)
+      ? ""
+      : `- You can NOT see customers' accounts: no balances, bundles, usage or transactions. Never offer to check, look up or confirm anything on their account ("Would you like me to check?"). Instead tell them how to check it themselves${mvno.ussd_codes?.balance ? `: dial ${mvno.ussd_codes.balance} to see their remaining airtime, data, minutes and bundle expiry` : ""}.\n`
+  }- Always try to answer the question itself first. General questions ("what services do you offer?", "do you have other services?", "tell me about you") get a short summary from the knowledge base, not the menu.
 - Answer from the knowledge base below. If it doesn't cover the question, or the customer is upset, asks for a human, reports fraud/lost phone, needs a refund, or you're unsure after one attempt, call handoff_to_agent. Don't make up policies, prices or timelines.
 - Never ask for PINs, passwords or full ID numbers. Mobile money is ${mvno.wallet_name}${mvno.wallet_ussd ? ` (${mvno.wallet_ussd})` : ""}; prices are in ${mvno.currency}.
 - Other ways to reach us: ${mvno.care_line ?? "this WhatsApp chat"}.${
@@ -297,7 +302,12 @@ export async function runAgent(mvno: Mvno, contact: Contact, history: Message[])
       { type: "text", text: await stableSystem(mvno), cache_control: { type: "ephemeral" } },
       { type: "text", text: await turnContext(mvno, contact, history) },
     ],
-    tools: mvno.sim_delivery ? BOT_TOOLS : BOT_TOOLS.filter((t) => t.name !== "track_or_order_delivery"),
+    tools: BOT_TOOLS.filter(
+      (t) =>
+        (mvno.sim_delivery || t.name !== "track_or_order_delivery") &&
+        // No billing connection: the bot can't read accounts, so don't let it offer to.
+        (hasRealBilling(mvno.slug) || (t.name !== "check_balance" && t.name !== "check_line_status")),
+    ),
     tool_choice: { type: "auto" },
     messages,
   });

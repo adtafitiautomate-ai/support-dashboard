@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, Megaphone, Plus, Search, X } from "lucide-react";
+import { Download, Loader2, Megaphone, Plus, Search, Send, Users, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { toIntlPrefix, toLocalPrefix } from "@/lib/audience";
 import { formatPhone } from "@/lib/format";
 import { PageHeader } from "./app-shell";
+import { CampaignsPanel } from "./campaigns";
 import { api, Badge, Button, cx, Pager, relTime, useNow } from "./ui";
 
 type Row = { id: string; wa_id: string; name: string | null; created_at: string; last_seen_at: string | null; opted_out_at: string | null };
@@ -27,6 +28,17 @@ export function AudienceView() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [tab, setTab] = useState<"customers" | "campaigns">("customers");
+  // Ticked customers for a campaign (kept across pages and searches, cleared when switching tenant).
+  const [picked, setPicked] = useState<{ key: string; ids: Set<string> }>({ key: "", ids: new Set() });
+  const selected = picked.key === mvnoId ? picked.ids : new Set<string>();
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPicked({ key: mvnoId, ids: next });
+  };
+  const [allCount, setAllCount] = useState<{ key: string; n: number }>({ key: "", n: 0 });
   const mvno = mvnos.find((m) => m.id === mvnoId);
   const canEdit = isSuper || adminOf.has(mvnoId);
 
@@ -42,6 +54,7 @@ export function AudienceView() {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error ?? "Could not load audience");
         setData(j);
+        if (!q) setAllCount({ key: mvnoId, n: Math.max(0, j.total - j.optedOut) });
         setError(null);
       } catch (e) {
         if ((e as Error).name !== "AbortError") setError((e as Error).message);
@@ -51,7 +64,7 @@ export function AudienceView() {
   }, [mvnoId, q, page, reload]);
 
   return (
-    <div className="h-full overflow-y-auto px-6 pb-6">
+    <div className="h-full overflow-y-auto px-4 pb-6 sm:px-6">
       <div className="mx-auto max-w-5xl">
         <PageHeader
           title="Audience"
@@ -81,7 +94,45 @@ export function AudienceView() {
 
         {error && <div className="mb-4 rounded-xl bg-red-50 px-4 py-2 text-sm text-danger ring-1 ring-red-200">{error}</div>}
 
-        {mvno && data && (
+        {mvno && data && !!data.prefixes.length && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-full bg-white/70 p-1 text-[13px] font-medium ring-1 ring-black/5">
+              {(
+                [
+                  ["customers", "Customers", Users],
+                  ["campaigns", "Campaigns", Megaphone],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  className={cx("flex items-center gap-1.5 rounded-full px-3.5 py-1.5", tab === id ? "bg-zinc-900 text-white" : "text-muted hover:text-ink")}
+                >
+                  <Icon className="size-4" /> {label}
+                </button>
+              ))}
+            </div>
+            {tab === "customers" && selected.size > 0 && canEdit && (
+              <button onClick={() => setTab("campaigns")} className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-3.5 py-1.5 text-[13px] font-medium text-white">
+                <Send className="size-3.5" /> Campaign to {selected.size} selected
+              </button>
+            )}
+          </div>
+        )}
+
+        {mvno && data && tab === "campaigns" && !!data.prefixes.length && (
+          <CampaignsPanel
+            key={mvnoId}
+            mvnoId={mvnoId}
+            mvnoName={mvno.name}
+            canSend={canEdit}
+            audienceCount={allCount.key === mvnoId ? allCount.n : 0}
+            selected={[...selected]}
+            onClearSelection={() => setPicked({ key: mvnoId, ids: new Set() })}
+          />
+        )}
+
+        {mvno && data && (tab === "customers" || !data.prefixes.length) && (
           <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
             <div className="space-y-4">
               <div className="card p-5">
@@ -98,7 +149,7 @@ export function AudienceView() {
               </p>
             </div>
 
-            <section className="card min-w-0 p-5">
+            <section className="card min-w-0 p-4 sm:p-5">
               <div className="mb-3 flex items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-black/10">
                 <Search className="size-4 text-muted" />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or number" className="h-10 flex-1 bg-transparent text-sm outline-none" />
@@ -113,9 +164,28 @@ export function AudienceView() {
               ) : (
                 <>
                   <div className="overflow-x-auto rounded-2xl bg-white/50 ring-1 ring-black/5">
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[520px] text-sm">
                       <thead className="text-left text-xs text-muted">
                         <tr className="border-b border-line">
+                          {canEdit && (
+                            <th className="w-8 py-2 pl-3">
+                              <input
+                                type="checkbox"
+                                aria-label="Select this page"
+                                className="size-4 accent-zinc-900"
+                                checked={data.contacts.filter((x) => !x.opted_out_at).length > 0 && data.contacts.filter((x) => !x.opted_out_at).every((x) => selected.has(x.id))}
+                                onChange={(e) => {
+                                  const next = new Set(selected);
+                                  for (const x of data.contacts) {
+                                    if (x.opted_out_at) continue;
+                                    if (e.target.checked) next.add(x.id);
+                                    else next.delete(x.id);
+                                  }
+                                  setPicked({ key: mvnoId, ids: next });
+                                }}
+                              />
+                            </th>
+                          )}
                           <th className="px-3 py-2 font-medium">Customer</th>
                           <th className="px-3 py-2 font-medium">Number</th>
                           <th className="px-3 py-2 font-medium">First contact</th>
@@ -124,7 +194,20 @@ export function AudienceView() {
                       </thead>
                       <tbody>
                         {data.contacts.map((c) => (
-                          <tr key={c.id} className="border-b border-line/60 last:border-0">
+                          <tr key={c.id} className={cx("border-b border-line/60 last:border-0", selected.has(c.id) && "bg-zinc-50")}>
+                            {canEdit && (
+                              <td className="py-2 pl-3">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select ${c.name ?? c.wa_id}`}
+                                  className="size-4 accent-zinc-900 disabled:opacity-30"
+                                  disabled={!!c.opted_out_at}
+                                  title={c.opted_out_at ? "Opted out: can't receive campaigns" : undefined}
+                                  checked={selected.has(c.id)}
+                                  onChange={() => toggle(c.id)}
+                                />
+                              </td>
+                            )}
                             <td className="px-3 py-2">
                               <span className="font-medium">{c.name || "Unknown"}</span>
                               {c.opted_out_at && (
@@ -140,7 +223,7 @@ export function AudienceView() {
                         ))}
                         {!data.contacts.length && (
                           <tr>
-                            <td colSpan={4} className="px-3 py-10 text-center text-muted">
+                            <td colSpan={5} className="px-3 py-10 text-center text-muted">
                               {q ? "No customers match your search." : "No customers from these ranges have messaged yet."}
                             </td>
                           </tr>

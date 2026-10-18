@@ -263,7 +263,11 @@ const statusRank ={ queued: 0, sent: 1, delivered: 2, read: 3, failed: 4 } as co
 export async function applyStatus(update: StatusUpdate) {
   const db = supabaseAdmin();
   const { data } = await db.from("messages").select("id,status").eq("wa_message_id", update.waMessageId).maybeSingle();
-  if (!data) return;
+  if (!data) {
+    // Not a chat message: maybe a campaign send.
+    const { applyCampaignStatus } = await import("@/lib/campaigns");
+    return applyCampaignStatus(update.waMessageId, update.status, update.error);
+  }
   // Webhooks can arrive out of order: never move a receipt backwards.
   if (statusRank[update.status] <= statusRank[data.status as keyof typeof statusRank] && update.status !== "failed") return;
   await db.from("messages").update({ status: update.status, error: update.error ?? null }).eq("id", data.id);

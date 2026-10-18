@@ -20,6 +20,7 @@ export interface Mvno {
   finance_emails: string[];
   alert_emails: string[];
   number_prefixes: string[];
+  wa_waba_id?: string | null; // WhatsApp Business Account (for message templates)
   sim_delivery?: boolean; // offers SIM/eSIM home delivery
   csat_every_days?: number; // ask each customer for a rating at most this often (0 = every chat)
   escalation_contacts: EscalationContact[];
