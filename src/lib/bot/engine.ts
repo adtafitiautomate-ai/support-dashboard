@@ -9,6 +9,7 @@ import {
   handoff,
   logEvent,
   markReadAndTyping,
+  previousChat,
   recentMessages,
   recordInbound,
   resolveConversation,
@@ -253,8 +254,11 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   // ---------------------------------------------------------- free text
   if (isEscape(text)) return F.showMenu(ctx);
 
-  const history = await recentMessages(ctx.conv.id, 20);
+  let history = await recentMessages(ctx.conv.id, 20);
   const isFirst = history.filter((m) => m.direction === "out" && !m.is_internal).length === 0;
+  // New chat: also show the AI the customer's previous chat, so it continues the story
+  // instead of re-asking their town, number or issue.
+  if (history.length < 6) history = [...(await previousChat(ctx.contact.id, ctx.conv.id)), ...history];
   // A plain greeting ("Hi", "Asalam alaikum") always gets the MVNO's configured greeting + menu,
   // never an improvised AI reply. Greetings with a question attached still go to the AI.
   if (isGreeting(text) && (isFirst || isJustGreeting(text))) return F.showMenu(ctx, greetingReply(ctx.mvno.greeting, text));

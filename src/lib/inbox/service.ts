@@ -83,6 +83,34 @@ export async function upsertContact(mvno: Mvno, waId: string, profileName?: stri
   return data;
 }
 
+const REOPEN_WITHIN_MS = 24 * 3_600_000;
+
+/**
+ * The customer's previous chat (last 7 days), so the bot doesn't re-ask what they already
+ * told us (town, number, the issue). Customer-visible messages only.
+ */
+export async function previousChat(contactId: string, currentConvId: string, limit = 16): Promise<Message[]> {
+  const db = supabaseAdmin();
+  const { data: prev } = await db
+    .from("conversations")
+    .select("id")
+    .eq("contact_id", contactId)
+    .neq("id", currentConvId)
+    .gte("last_message_at", new Date(Date.now() - 7 * 86_400_000).toISOString())
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!prev) return [];
+  const { data } = await db
+    .from("messages")
+    .select("*")
+    .eq("conversation_id", prev.id)
+    .eq("is_internal", false)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []).reverse();
+}
+
 export async function getActiveConversation(mvno: Mvno, contact: Contact): Promise<Conversation> {
   const db = supabaseAdmin();
   const { data: active } = await db
@@ -92,6 +120,24 @@ export async function getActiveConversation(mvno: Mvno, contact: Contact): Promi
     .neq("status", "resolved")
     .maybeSingle();
   if (active) return active;
+
+  // A reply soon after a ticket a person handled was resolved ("still waiting for network")
+  // continues that ticket with the same agent instead of starting a fresh bot chat.
+  const { data: last } = await db
+    .from("conversations")
+    .select("*")
+    .eq("contact_id", contact.id)
+    .eq("status", "resolved")
+    .not("ticket_no", "is", null)
+    .gte("resolved_at", new Date(Date.now() - REOPEN_WITHIN_MS).toISOString())
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (last) {
+    const reopened = await updateConversation(last.id, { status: "open", resolved_at: null, bot_state: {} });
+    await logEvent(reopened, "Customer replied after it was resolved: ticket reopened");
+    return reopened;
+  }
 
   const { data, error } = await db
     .from("conversations")
