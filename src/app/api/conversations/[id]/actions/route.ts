@@ -95,7 +95,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
         return Response.json({ conversation: await updateConversation(conv.id, { unread_count: 0 }) });
       case "summarize": {
         await enforce(`ai:summary:${profile.id}`, LIMITS.aiSummary);
-        const t = await triage(await recentMessages(conv.id, 60));
+        const t = await triage(await recentMessages(conv.id, 60), "summary");
         if (!t) throw new HttpError(503, "AI is not configured (set ANTHROPIC_API_KEY)");
         const updated = await updateConversation(conv.id, {
           subject: t.subject,

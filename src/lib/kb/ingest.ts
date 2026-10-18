@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { claude } from "@/lib/bot/ai";
+import { recordAiUsage, withAiScope } from "@/lib/ai-usage";
 
 const MODEL = process.env.BOT_MODEL || "claude-opus-5-5";
 const MAX_TEXT = 400_000; // chars kept from any one source
@@ -40,7 +41,7 @@ Return an empty list if nothing is useful.`;
 export async function ingestSource(sourceId: string, mvnoId: string, input: SourceInput) {
   const db = supabaseAdmin();
   try {
-    const articles = input.kind === "url" ? await fromUrl(input.url) : await fromFile(input);
+    const articles = await withAiScope({ mvnoId, kind: "knowledge" }, () => (input.kind === "url" ? fromUrl(input.url) : fromFile(input)));
     if (!articles.length) throw new Error("No usable content found in this source");
 
     await db.from("kb_articles").delete().eq("source_id", sourceId); // re-ingest replaces
@@ -200,6 +201,7 @@ async function distill(content: Anthropic.ContentBlockParam[]): Promise<Article[
     messages: [{ role: "user", content }],
   });
   const msg = await stream.finalMessage();
+  await recordAiUsage(msg, { kind: "knowledge" });
   if (msg.stop_reason === "refusal") throw new Error("The AI declined to process this source");
   if (msg.stop_reason === "max_tokens") throw new Error("Source is too large to process in one go. Split it into smaller files.");
   const text = msg.content

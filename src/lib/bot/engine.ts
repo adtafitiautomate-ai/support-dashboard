@@ -184,6 +184,10 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         return F.askTxnId(ctx, (a in F.TXN_TYPES ? a : "other") as F.TxnType);
       case "near":
         return findNearest(ctx, a === "store" || a === "agent" ? a : undefined);
+      case "lost": // lost:this | lost:block:<both|line|none>
+        if (a === "this") return F.askLostBlock(ctx, ctx.contact.wa_id);
+        if (a === "block" && typeof state.data?.msisdn === "string") return finishLostLine(ctx, state.data.msisdn, b === "both" || b === "line" || b === "none" ? b : "both");
+        return F.startLostLine(ctx);
     }
   }
 
@@ -191,6 +195,17 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   if (state.awaiting === "txn" && text && !isEscape(text)) {
     const type = ((state.data?.txnType as string) in F.TXN_TYPES ? state.data?.txnType : "other") as F.TxnType;
     return finishFailedTxn(ctx, /^(skip|no|sina|sirina)$/i.test(text) ? null : text.slice(0, 120), type);
+  }
+  if (state.awaiting === "lost_number" && text && !isEscape(text)) {
+    const msisdn = F.normalizeMsisdn(text);
+    if (!msisdn) return F.say(ctx, { type: "text", text: "That number doesn't look right. Type it like 0724 123 456, or type *menu* to cancel." });
+    return F.askLostBlock(ctx, msisdn);
+  }
+  if (state.awaiting === "lost_block" && text && !isEscape(text) && typeof state.data?.msisdn === "string") {
+    const t = text.toLowerCase();
+    if (/^(yes|y|block|ok|yeah|please)\b/.test(t)) return finishLostLine(ctx, state.data.msisdn, "both");
+    if (/^(no|n|don'?t|nope)\b/.test(t)) return finishLostLine(ctx, state.data.msisdn, "none");
+    return F.askLostBlock(ctx, state.data.msisdn);
   }
   if (state.awaiting === "location") {
     if (msg.location) {
@@ -312,6 +327,12 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
       return botResolve(ctx, String(input.summary ?? ""), String(input.category ?? "inquiry"));
     case "sim_replacement_help":
       return F.showSimLoss(ctx);
+    case "report_lost_or_stolen": {
+      const msisdn = F.normalizeMsisdn(String(input.number ?? ""));
+      const block = input.block as string | undefined;
+      if (msisdn && (block === "both" || block === "line" || block === "none")) return finishLostLine(ctx, msisdn, block);
+      return msisdn ? F.askLostBlock(ctx, msisdn) : F.startLostLine(ctx);
+    }
     case "show_promos":
       return F.showPromos(ctx);
     case "track_or_order_delivery":
@@ -386,6 +407,39 @@ async function finishFailedTxn(ctx: F.FlowCtx, txnId: string | null, type: F.Txn
   await notifyFailedTransaction(ctx.mvno, ctx.conv, ctx.contact, { type: label, id: txnId });
 }
 
+/** Lost / stolen line: raise an urgent ticket for the team to block it (or just record it), with a checklist. */
+async function finishLostLine(ctx: F.FlowCtx, msisdn: string, block: "both" | "line" | "none") {
+  const w = ctx.mvno.wallet_name;
+  const num = F.localNumber(msisdn);
+  const what = block === "both" ? `your line and ${w}` : block === "line" ? "your line" : null;
+  await updateConversation(ctx.conv.id, { bot_state: {} });
+  await F.say(ctx, {
+    type: "buttons",
+    body:
+      (what
+        ? `Thank you 🙏 I've raised an urgent request to block ${what} on *${num}*. We'll confirm here once it's done.\n\n`
+        : `Noted: *${num}* reported lost/stolen and *not* blocked. If you change your mind, just reply *block*.\n\n`) +
+      `To get your number back on a new SIM, visit a *service centre* with your *original National ID*. You keep the same number${block !== "line" ? ` and your ${w} balance` : ""}.`,
+    buttons: [
+      { id: "near:store", title: "Nearest centre" },
+      { id: "menu:main", title: "Main menu" },
+    ],
+  });
+  const reason = what ? `Lost/stolen line ${num}: block ${block === "both" ? `line + ${w}` : "line only"}` : `Lost/stolen line ${num} (customer chose not to block)`;
+  await doHandoff(ctx, { reason, priority: what ? "urgent" : "normal", category: "sim" });
+  await updateConversation(ctx.conv.id, { subject: what ? `Block lost line ${num}` : `Lost line reported ${num}` }).catch(() => undefined);
+  await addBotNote(
+    ctx.conv,
+    `🔒 Lost / stolen line\n` +
+      `Number: ${num} (+${msisdn})\n` +
+      `Reported from: +${ctx.contact.wa_id}${ctx.contact.wa_id === msisdn ? " (same number)" : " (different number: verify ownership first)"}\n` +
+      `Requested: ${block === "both" ? `block line AND ${w}` : block === "line" ? `block line only (${w} stays active)` : "no block, record only"}\n` +
+      (what
+        ? `1. Verify the caller owns the line (registered name / NIN / recent activity).\n2. Block ${block === "both" ? `the line and ${w} wallet` : "the line"} in billing.\n3. Confirm to the customer here, then resolve the ticket.`
+        : `1. Note the report on the subscriber's account.\n2. Resolve once the customer confirms they don't need a block.`),
+  );
+}
+
 /** The bot answered a simple inquiry and the customer is done: close the ticket as bot-resolved. */
 async function botResolve(ctx: F.FlowCtx, summary: string, category: string) {
   if (ctx.conv.status !== "bot") return; // never close chats owned by people
@@ -452,7 +506,8 @@ async function keywordFallback(ctx: F.FlowCtx, text: string) {
   if (/^(thanks|thank you|thank u|thx|asante|webale|mwebale|ok thanks|that'?s all|bye)\b/.test(t)) return botResolve(ctx, "", "inquiry");
   if (/fail|deduct|not received|haven.?t received|didn.?t (get|receive|go|reach)|not (credited|reflect)|stuck|pending|charged|reverse|refund|wrong number|sent to the wrong|bill.*(not|fail)|withdraw.*(not|fail)|deposit.*(not|fail)/.test(t))
     return F.startFailedTxn(ctx);
-  if (/stolen|lost (my )?(sim|phone)|replace|sim swap|damaged sim|broken sim/.test(t)) return F.showSimLoss(ctx);
+  if (/stolen|lost (my )?(sim|phone|line)|^block( my)?( line| number| sim)?$/.test(t)) return F.startLostLine(ctx);
+  if (/replace|sim swap|damaged sim|broken sim/.test(t)) return F.showSimLoss(ctx);
   // "agent" alone usually means a PaxSente agent location, so it is not a handoff trigger.
   if (/(talk to|speak to|human|person|customer care|complain|fraud)/.test(t))
     return doHandoff(ctx, { reason: text.slice(0, 120), priority: /fraud/.test(t) ? "high" : "normal" });

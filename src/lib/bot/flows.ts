@@ -260,6 +260,42 @@ export async function showSimLoss(ctx: FlowCtx) {
   });
 }
 
+/** "256724123456" → "0724 123 456" for customer-facing text. */
+export const localNumber = (msisdn: string) => (msisdn.startsWith("256") ? `0${msisdn.slice(3, 6)} ${msisdn.slice(6, 9)} ${msisdn.slice(9)}` : `+${msisdn}`);
+
+/** Lost / stolen phone or SIM, step 1: which number? */
+export async function startLostLine(ctx: FlowCtx) {
+  await setState(ctx, { flow: "lost_line", awaiting: "lost_number" });
+  await say(ctx, {
+    type: "buttons",
+    body:
+      `Sorry to hear that 😟 Let's protect your line.\n\n` +
+      `Please type the *${ctx.mvno.name} number* that was lost or stolen (e.g. 0724 123 456).\n\n` +
+      `If it's the number you're chatting from, tap *This number*.`,
+    buttons: [
+      { id: "lost:this", title: "This number" },
+      { id: "menu:main", title: "Cancel" },
+    ],
+  });
+}
+
+/** Step 2: block the line, the wallet, both, or nothing. */
+export async function askLostBlock(ctx: FlowCtx, msisdn: string) {
+  await setState(ctx, { flow: "lost_line", awaiting: "lost_block", data: { msisdn } });
+  const w = ctx.mvno.wallet_name;
+  await say(ctx, {
+    type: "buttons",
+    body:
+      `Number: *${localNumber(msisdn)}*\n\n` +
+      `Should we block it so nobody can use it? Blocking stops calls, data and your *${w}* on that line until you replace the SIM.`,
+    buttons: [
+      { id: "lost:block:both", title: `Block line + ${w}`.slice(0, 20) },
+      { id: "lost:block:line", title: "Block line only" },
+      { id: "lost:block:none", title: "Don't block" },
+    ],
+  });
+}
+
 export const TXN_TYPES = {
   send_money: "money transfer (sent)",
   receive_money: "money not received",

@@ -73,7 +73,7 @@ export interface BotState {
   flow?: string;
   step?: string;
   data?: Record<string, unknown>;
-  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn";
+  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn" | "lost_number" | "lost_block";
   ai_turns?: number;
 }
 

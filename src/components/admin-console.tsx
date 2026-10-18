@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, History, Mail, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
+import { Building2, Cpu, History, Mail, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { patch } from "@/lib/store";
 import type { MemberRole, Mvno } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { api, Avatar, Badge, cx, relTime, useNow } from "./ui";
 import { ActivityLog } from "./admin-activity";
 import { EmailSettings } from "./admin-email";
+import { AiUsage } from "./admin-ai-usage";
 import { RenewToken, TokenCountdown, type TokenInfo } from "./admin-token";
 import { displayLogin } from "@/lib/login";
 
@@ -28,7 +29,7 @@ const ROLES: MemberRole[] = ["admin", "supervisor", "agent"];
 const roleTone = { admin: "violet", supervisor: "blue", agent: "neutral" } as const;
 
 export function AdminConsole() {
-  const [tab, setTab] = useState<"mvnos" | "users" | "email" | "activity">("mvnos");
+  const [tab, setTab] = useState<"mvnos" | "users" | "email" | "ai" | "activity">("mvnos");
   const [data, setData] = useState<{ mvnos: AdminMvno[]; users: AdminUser[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<AdminMvno> | null>(null);
@@ -101,6 +102,7 @@ export function AdminConsole() {
             ["mvnos", "MVNOs", Building2, data.mvnos.length],
             ["users", "Users", Users, data.users.length],
             ["email", "Email", Mail, ""],
+            ["ai", "AI usage", Cpu, ""],
             ["activity", "Activity", History, ""],
           ] as const
         ).map(([id, label, Icon, n]) => (
@@ -155,6 +157,7 @@ export function AdminConsole() {
 
       {tab === "email" && <EmailSettings />}
       {tab === "activity" && <ActivityLog />}
+      {tab === "ai" && <AiUsage />}
 
       {tab === "users" && (
         <section className="card overflow-hidden">

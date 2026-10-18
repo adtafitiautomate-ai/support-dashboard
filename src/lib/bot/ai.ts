@@ -4,6 +4,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Contact, KbArticle, Message, Mvno } from "@/lib/types";
+import { recordAiUsage, type AiKind } from "@/lib/ai-usage";
 
 const MODEL = process.env.BOT_MODEL || "claude-opus-5-5";
 
@@ -70,7 +71,7 @@ How to reply:
       ? `\n- USSD codes:${mvno.ussd_codes.balance ? ` check balance ${mvno.ussd_codes.balance};` : ""}${mvno.ussd_codes.self_service ? ` buy airtime/bundles or see your own number ${mvno.ussd_codes.self_service};` : ""}${mvno.ussd_codes.promos ? ` promo bundles ${mvno.ussd_codes.promos};` : ""}${mvno.ussd_codes.other_networks ? ` buy from an MTN/Airtel line via ${mvno.ussd_codes.other_networks} (Airtime and Bundles, small fee);` : ""}`
       : ""
   }
-- Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost/stolen/damaged SIM: always call sim_replacement_help (agents cannot replace SIMs).
+- Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost or stolen phone/SIM: always call report_lost_or_stolen (pass the number and block choice if the customer already gave them). Damaged SIM or SIM replacement only: call sim_replacement_help (agents cannot replace SIMs).
 - When you have fully answered a simple inquiry and the customer says thanks / that's all, call resolve_conversation with a short reply (don't ask "anything else?" again).
 - Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre".
 
@@ -209,8 +210,23 @@ export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "sim_replacement_help",
-    description: "Customer's SIM is lost, stolen, damaged or needs replacing. Sends service-centre instructions (original National ID) with a nearest-centre button.",
+    description: "Customer's SIM is damaged or needs replacing (NOT lost/stolen). Sends service-centre instructions (original National ID) with a nearest-centre button.",
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    strict: true,
+  },
+  {
+    name: "report_lost_or_stolen",
+    description:
+      "Customer's phone or SIM was lost or stolen. Asks for the affected number and whether to block the line (and mobile money wallet), then raises an urgent ticket for the team to block it. Pass what the customer already said; use empty string / \"ask\" when unknown.",
+    input_schema: {
+      type: "object",
+      properties: {
+        number: { type: "string", description: "The lost/stolen line, e.g. 0724123456. Empty string if not given yet." },
+        block: { type: "string", enum: ["both", "line", "none", "ask"], description: "both = block line and wallet; line = line only; none = don't block; ask = not stated yet" },
+      },
+      required: ["number", "block"],
+      additionalProperties: false,
+    },
     strict: true,
   },
   {
@@ -228,7 +244,7 @@ export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "handoff_to_agent",
     description:
-      "Transfer the conversation to a human support agent. Use for refunds, fraud, lost/stolen phones, unresolved technical issues, complaints, or when asked.",
+      "Transfer the conversation to a human support agent. Use for refunds, fraud, unresolved technical issues, complaints, or when asked.",
     input_schema: {
       type: "object",
       properties: {
@@ -279,6 +295,7 @@ export async function runAgent(mvno: Mvno, contact: Contact, history: Message[])
     messages,
   });
 
+  await recordAiUsage(response, { kind: "bot_reply", mvnoId: mvno.id, conversationId: history[0]?.conversation_id });
   if (response.stop_reason === "refusal") {
     return { text: "", tools: [{ name: "handoff_to_agent", input: { reason: "Bot could not answer", priority: "normal", category: "other" } }] };
   }
@@ -315,7 +332,7 @@ function transcript(history: Message[]) {
     .join("\n");
 }
 
-export async function triage(history: Message[]): Promise<TriageResult | null> {
+export async function triage(history: Message[], kind: AiKind = "triage"): Promise<TriageResult | null> {
   const c = claude();
   if (!c) return null;
   const res = await c.messages.parse({
@@ -325,6 +342,7 @@ export async function triage(history: Message[]): Promise<TriageResult | null> {
     system: "You triage telecom customer-care WhatsApp conversations for human agents. Be factual and terse.",
     messages: [{ role: "user", content: `Conversation so far:\n\n${transcript(history)}` }],
   });
+  await recordAiUsage(res, { kind, mvnoId: history[0]?.mvno_id, conversationId: history[0]?.conversation_id });
   return res.parsed_output ?? null;
 }
 
@@ -349,6 +367,7 @@ export async function suggestReply(mvno: Mvno, contact: Contact, history: Messag
       },
     ],
   });
+  await recordAiUsage(res, { kind: "draft", mvnoId: mvno.id, conversationId: history[0]?.conversation_id });
   return res.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
