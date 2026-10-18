@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Loader2, Mail, Send } from "lucide-react";
+import { Check, Loader2, Mail, Send, Trash2 } from "lucide-react";
 import { api, Badge, cx } from "./ui";
 
 const field = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30";
@@ -22,7 +22,8 @@ export function EmailSettings() {
   const [form, setForm] = useState<Form | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
   const [configured, setConfigured] = useState(false);
-  const [busy, setBusy] = useState<null | "save" | "test">(null);
+  const [busy, setBusy] = useState<null | "save" | "test" | "remove">(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [testTo, setTestTo] = useState("");
 
@@ -77,6 +78,23 @@ export function EmailSettings() {
     try {
       await api("/api/admin/smtp", { action: "test", to: testTo });
       setMsg({ ok: true, text: `Test email sent to ${testTo}. Check the inbox (and spam folder).` });
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove() {
+    setBusy("remove");
+    setMsg(null);
+    try {
+      await api("/api/admin/smtp", { action: "remove" });
+      setConfigured(false);
+      setHasPassword(false);
+      setConfirmRemove(false);
+      setForm({ host: "", port: 587, secure: false, username: "", password: "", from_email: "", from_name: "Tuongee", enabled: true });
+      setMsg({ ok: true, text: "SMTP settings removed. The server, username and password are deleted; no emails will be sent until new settings are saved." });
     } catch (err) {
       setMsg({ ok: false, text: (err as Error).message });
     } finally {
@@ -160,16 +178,38 @@ export function EmailSettings() {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} /> Send notification emails
         </label>
-        <button disabled={busy === "save"} className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60">
-          {busy === "save" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Save settings
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button disabled={busy === "save"} className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60">
+            {busy === "save" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Save settings
+          </button>
+          {configured &&
+            (confirmRemove ? (
+              <span className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-1.5 text-sm text-red-700 ring-1 ring-red-200">
+                Delete server, username and password?
+                <button type="button" onClick={remove} disabled={busy === "remove"} className="flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-60">
+                  {busy === "remove" && <Loader2 className="size-3 animate-spin" />} Yes, remove
+                </button>
+                <button type="button" onClick={() => setConfirmRemove(false)} className="rounded-lg px-2 py-1 text-xs font-medium hover:bg-red-100">
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmRemove(true)}
+                className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-red-600 ring-1 ring-red-200 transition hover:bg-red-50"
+              >
+                <Trash2 className="size-4" /> Remove settings
+              </button>
+            ))}
+        </div>
         {msg && <p className={cx("rounded-xl px-3 py-2 text-sm", msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700")}>{msg.text}</p>}
       </form>
 
       <div className="space-y-4">
         <section className="card p-5">
           <h3 className="font-semibold">Send a test email</h3>
-          <p className="mt-1 text-xs text-muted">Save first, then send a test to check the settings.</p>
+          <p className="mt-1 text-xs text-muted">{configured ? "Sends a test using the saved settings." : "Save the settings first, then send a test here."}</p>
           <div className="mt-3 flex gap-2">
             <input type="email" className={field} value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@company.com" />
             <button

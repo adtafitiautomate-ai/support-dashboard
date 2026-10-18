@@ -33,6 +33,7 @@ const Body = z.discriminatedUnion("action", [
     enabled: z.boolean(),
   }),
   z.object({ action: z.literal("test"), to: z.email() }),
+  z.object({ action: z.literal("remove") }),
 ]);
 
 export async function POST(req: Request) {
@@ -50,6 +51,15 @@ export async function POST(req: Request) {
       if (error) throw error;
       forgetSmtp();
       await audit(profile, "email.smtp_updated", { target: `${body.host}:${body.port}`, details: { from: body.from_email, enabled: body.enabled, password_changed: !!password } });
+      return Response.json({ ok: true });
+    }
+
+    if (body.action === "remove") {
+      // Deletes host, username and password; emails stop until new settings are saved.
+      const { error } = await supabaseAdmin().rpc("clear_smtp_settings");
+      if (error) throw error;
+      forgetSmtp();
+      await audit(profile, "email.smtp_removed");
       return Response.json({ ok: true });
     }
 
