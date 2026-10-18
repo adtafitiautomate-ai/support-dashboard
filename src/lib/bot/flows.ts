@@ -381,24 +381,23 @@ export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
   const { data: b } = await supabaseAdmin().from("bundles").select("*").eq("id", bundleId).eq("mvno_id", ctx.mvno.id).maybeSingle();
   if (!b) return showBundles(ctx);
   if (!hasRealBilling(ctx.mvno.slug)) {
-    // No live billing: inform, never sell. Show the bundle's own buying code, or the general one.
+    // No live billing: inform, never sell. Buying steps come from the tenant's own knowledge base.
+    const head = `${bundleSummary(b)}\n*Price: ${formatMoney(b.price, ctx.mvno.currency)}*\n\n`;
+    const steps = await buyingSteps(ctx.mvno.id, 1024 - head.length - 20);
     const code = b.ussd ?? ctx.mvno.ussd_codes?.self_service;
     await setState(ctx, {});
     await say(ctx, {
       type: "buttons",
-      header: b.name,
+      header: b.name.slice(0, 60),
       body:
-        `${bundleSummary(b)}\n*Price: ${formatMoney(b.price, ctx.mvno.currency)}*\n\n` +
-        `To buy it, dial ${code ?? "our self-service code"} on your phone` +
-        (ctx.mvno.wallet_ussd ? `, or pay with ${ctx.mvno.wallet_name} on ${ctx.mvno.wallet_ussd}` : "") +
-        "." +
-        (ctx.mvno.ussd_codes?.other_networks ? `
-From an MTN or Airtel line: dial ${ctx.mvno.ussd_codes.other_networks} → Airtime and Bundles → ${ctx.mvno.name} (small fee).` : "") +
-        `
-You can also buy at any of our agents.`,
+        head +
+        (steps ??
+          `To buy it, dial ${code ?? "our self-service code"} on your phone` +
+            (ctx.mvno.wallet_ussd ? `, or pay with ${ctx.mvno.wallet_name} on ${ctx.mvno.wallet_ussd}` : "") +
+            "." +
+            (ctx.mvno.ussd_codes?.other_networks ? `\nFrom an MTN or Airtel line: dial ${ctx.mvno.ussd_codes.other_networks} → Airtime and Bundles → ${ctx.mvno.name} (small fee).` : "")),
       buttons: [
         { id: "menu:bundles", title: "Other bundles" },
-        { id: "near:agent", title: "Nearest agent" },
         { id: "menu:main", title: "Main menu" },
       ],
     });
