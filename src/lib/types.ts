@@ -79,6 +79,7 @@ export interface BotState {
 
 export interface Conversation {
   id: string;
+  followup_reason?: "after_hours" | "no_agents" | null;
   escalated_at?: string | null;
   escalated_to?: string | null;
   ticket_no: number | null; // set only once a person is involved (handoff or assignment)

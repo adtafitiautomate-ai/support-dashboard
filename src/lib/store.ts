@@ -24,6 +24,8 @@ interface State {
   presence: Map<string, PresenceInfo>; // by user id
   typing: Map<string, { userId: string; name: string; until: number }>; // by conversation id
   connected: boolean;
+  /** Tickets assigned to me when I came online (after-hours / nobody-online follow-ups). */
+  followups: { claimed: number; afterHours: number; waiting: number } | null;
   version: number;
 }
 
@@ -38,6 +40,7 @@ const state: State = {
   presence: new Map(),
   typing: new Map(),
   connected: false,
+  followups: null,
   version: 0,
 };
 

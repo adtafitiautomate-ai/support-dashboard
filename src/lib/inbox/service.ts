@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isSimulatedRun, SIMULATOR_TAG } from "./simulation";
 import { notifyWaitingNoAgent } from "@/lib/notify";
+import { describeHours, isOpen, nextOpening } from "@/lib/hours";
 import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/meta";
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
@@ -299,6 +300,17 @@ export async function pickAgent(mvnoId: string): Promise<{ id: string; full_name
   return { id: p.id, full_name: p.full_name };
 }
 
+/** Anyone on this MVNO's team online with a live heartbeat (even if at full capacity). */
+export async function anyAgentOnline(mvnoId: string) {
+  const { count } = await supabaseAdmin()
+    .from("mvno_members")
+    .select("user_id, profiles!inner(status, last_seen_at)", { count: "exact", head: true })
+    .eq("mvno_id", mvnoId)
+    .eq("profiles.status", "online")
+    .gte("profiles.last_seen_at", new Date(Date.now() - 3 * 60_000).toISOString());
+  return (count ?? 0) > 0;
+}
+
 export async function queuePosition(conv: Conversation) {
   const { count } = await supabaseAdmin()
     .from("conversations")
@@ -340,6 +352,26 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
       { type: "text", text: `I've connected you with ${agent.full_name.split(" ")[0]} from our team, they'll reply here shortly. 🙌` },
       { senderType: "bot" },
     );
+  } else if (!isOpen(mvno.business_hours) || !(await anyAgentOnline(mvno.id))) {
+    // After hours, or nobody signed in: log it as a follow-up instead of promising a wait time.
+    const afterHours = !isOpen(mvno.business_hours);
+    updated = await updateConversation(conv.id, { followup_reason: afterHours ? "after_hours" : "no_agents" });
+    await logEvent(updated, afterHours ? "Arrived after hours: waiting for follow-up" : "No agents online: waiting for follow-up");
+    const ref = updated.ticket_no ? ` (ticket #${updated.ticket_no})` : "";
+    const when = afterHours ? nextOpening(mvno.business_hours) : null;
+    await sendMessage(
+      mvno,
+      updated,
+      contact,
+      {
+        type: "text",
+        text: afterHours
+          ? `Our team is offline right now (we're available ${describeHours(mvno.business_hours)}). I've logged your request${ref} with everything you've shared, and an agent will follow up right here${when ? ` ${when}` : " as soon as we're back"}. No need to message again. 🙏`
+          : `Our agents aren't available at this moment. I've logged your request${ref} with everything you've shared, and the first agent back will follow up right here. No need to message again. 🙏`,
+      },
+      { senderType: "bot" },
+    );
+    if (!contact.tags?.includes(SIMULATOR_TAG)) await notifyWaitingNoAgent(mvno, updated, contact, input.reason);
   } else {
     const pos = await queuePosition(updated);
     const wait = Math.max(mvno.sla_first_response_mins, pos * 2);

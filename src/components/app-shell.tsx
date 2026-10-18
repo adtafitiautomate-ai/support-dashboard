@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
 import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
-import { WorkspaceProvider, useWorkspace } from "./workspace";
+import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { Avatar, cx, relTime, useNow } from "./ui";
@@ -21,8 +21,49 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="relative min-h-0 flex-1">
           <Gate>{children}</Gate>
         </main>
+        <FollowupBanner />
       </div>
     </WorkspaceProvider>
+  );
+}
+
+/** "Welcome back" summary of follow-ups assigned when the agent came online. */
+function FollowupBanner() {
+  const f = useStore((s) => s.followups);
+  const router = useRouter();
+  if (!f) return null;
+  const dismiss = () => patch((s) => (s.followups = null));
+  return (
+    <div role="status" className="fixed right-4 bottom-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-black/10">
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+          <Bell className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1 text-sm">
+          <div className="font-semibold">{f.claimed ? `${f.claimed} customer${f.claimed > 1 ? "s" : ""} need${f.claimed > 1 ? "" : "s"} a follow-up` : "Customers are waiting"}</div>
+          <p className="mt-0.5 text-[13px] text-muted">
+            {f.claimed
+              ? `They wrote while nobody was available${f.afterHours ? ` (${f.afterHours} after hours)` : ""} and are now assigned to you.`
+              : ""}
+            {f.waiting ? ` ${f.waiting} more waiting in the queue.` : ""}
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => {
+                dismiss();
+                router.push(f.claimed ? "/inbox?view=mine" : "/inbox?view=unassigned");
+              }}
+              className="rounded-full bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-700"
+            >
+              {f.claimed ? "Open my chats" : "Open queue"}
+            </button>
+            <button onClick={dismiss} className="rounded-full px-3 py-1.5 text-xs font-medium text-muted hover:bg-zinc-100">
+              Later
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -262,7 +303,8 @@ function ProfileMenu() {
   async function setStatus(status: AgentStatus) {
     patch((s) => s.me && (s.me.status = status));
     setOpen(false);
-    await supabaseBrowser().from("profiles").update({ status }).eq("id", me!.id);
+    await supabaseBrowser().from("profiles").update({ status, last_seen_at: new Date().toISOString() }).eq("id", me!.id);
+    if (status === "online") await claimFollowups();
   }
   const current = STATUS.find((x) => x.value === me.status)!;
 

@@ -102,7 +102,10 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
     bot_persona: mvno.bot_persona,
     sla_first_response_mins: mvno.sla_first_response_mins,
     brand_color: mvno.brand_color,
+    business_hours: mvno.business_hours ?? { tz: "Africa/Kampala", open: "08:00", close: "20:00", days: [0, 1, 2, 3, 4, 5, 6] },
   });
+  const hours = form.business_hours;
+  const setHours = (h: Partial<typeof hours>) => setForm({ ...form, business_hours: { ...hours, ...h } });
   const saver = useSaver();
   return (
     <form
@@ -139,6 +142,33 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
           value={form.sla_first_response_mins}
           onChange={(e) => setForm({ ...form, sla_first_response_mins: Number(e.target.value) })}
         />
+      </Field>
+      <Field
+        label="Team working hours"
+        hint={`Outside these hours (${hours.tz}), or when no agent is online, the bot logs a ticket, tells the customer when we'll follow up, and assigns it to the first agent who comes online.`}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="time" className={cx(input, "w-32")} value={hours.open} onChange={(e) => setHours({ open: e.target.value })} aria-label="Opens at" />
+          <span className="text-sm text-muted">to</span>
+          <input type="time" className={cx(input, "w-32")} value={hours.close} onChange={(e) => setHours({ close: e.target.value })} aria-label="Closes at" />
+          <div className="flex gap-1">
+            {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => {
+              const on = hours.days.includes(i);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setHours({ days: on ? hours.days.filter((x) => x !== i) : [...hours.days, i].sort() })}
+                  className={cx("size-8 rounded-full text-xs font-medium ring-1 transition", on ? "bg-zinc-900 text-white ring-zinc-900" : "text-muted ring-black/10 hover:bg-zinc-100")}
+                  aria-pressed={on}
+                  aria-label={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][i]}
+                >
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </Field>
       <div className="flex items-center gap-3">
         <Button variant="primary">Save</Button>

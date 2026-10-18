@@ -96,6 +96,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         await touch("online");
         patch((s) => s.me && (s.me.status = "online"));
       } else await touch();
+      // Pick up requests that came in while nobody was online.
+      if (getState().me?.status === "online") void claimFollowups();
       heartbeat = setInterval(() => void touch(), 60_000);
 
       await supabase.realtime.setAuth();
@@ -225,4 +227,23 @@ function onEvent(fn: Listener) {
   return () => {
     rt.listeners.delete(fn);
   };
+}
+
+/** Assigns me the oldest waiting tickets (up to my chat limit) and shows a summary banner. */
+export async function claimFollowups() {
+  try {
+    const r = await fetch("/api/queue/claim", { method: "POST" });
+    if (!r.ok) return;
+    const j = (await r.json()) as { claimed: { followup_reason?: string | null }[]; waiting: number };
+    if (!j.claimed.length && !j.waiting) return;
+    patch((s) => {
+      s.followups = {
+        claimed: j.claimed.length,
+        afterHours: j.claimed.filter((c) => c.followup_reason === "after_hours").length,
+        waiting: j.waiting,
+      };
+    });
+  } catch {
+    // Best effort: the queue is still visible in the inbox.
+  }
 }
