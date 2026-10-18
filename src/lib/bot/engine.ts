@@ -315,7 +315,9 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     }
     case "find_nearest_outlets": {
       const p = input.purpose as string | undefined;
-      return findNearest(ctx, p === "agent" ? "agent" : p === "service_centre" ? "store" : undefined);
+      const kind = p === "agent" ? "agent" : p === "service_centre" ? "store" : undefined;
+      const area = String(input.area ?? "").trim();
+      return area ? F.showOutletsByArea(ctx, area.slice(0, 100), kind) : findNearest(ctx, kind);
     }
     case "report_failed_transaction": {
       const id = String(input.transaction_id ?? "").trim();
@@ -451,17 +453,10 @@ async function botResolve(ctx: F.FlowCtx, summary: string, category: string) {
     subject: ctx.conv.subject ?? (summary ? summary.slice(0, 80) : "Inquiry answered by bot"),
     ai_summary: ctx.conv.ai_summary ?? (summary || null),
   });
-  // Only one survey per day: a customer who already rated just gets a goodbye.
-  const { count } = await supabaseAdmin()
-    .from("conversations")
-    .select("id", { count: "exact", head: true })
-    .eq("contact_id", ctx.contact.id)
-    .not("csat_score", "is", null)
-    .gte("resolved_at", new Date(Date.now() - 86_400_000).toISOString());
-  const askCsat = !count;
+  // resolveConversation decides whether a survey is due (once every N days per customer).
   // Keep ctx in sync so later writes in this turn don't overwrite the resolved state.
-  ctx.conv = await resolveConversation(ctx.mvno, ctx.conv, ctx.contact, null, askCsat, "Resolved by bot (inquiry answered)");
-  if (!askCsat) await F.say(ctx, { type: "text", text: `Thanks for chatting with ${ctx.mvno.name}! Have a great day 💜` });
+  ctx.conv = await resolveConversation(ctx.mvno, ctx.conv, ctx.contact, null, true, "Resolved by bot (inquiry answered)");
+  if (ctx.conv.bot_state?.awaiting !== "csat") await F.say(ctx, { type: "text", text: `Thanks for chatting with ${ctx.mvno.name}! Have a great day 💜` });
 }
 
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);

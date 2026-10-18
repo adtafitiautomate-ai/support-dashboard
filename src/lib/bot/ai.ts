@@ -74,7 +74,7 @@ How to reply:
   }
 - Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost or stolen phone/SIM: always call report_lost_or_stolen (pass the number and block choice if the customer already gave them). Damaged SIM or SIM replacement only: call sim_replacement_help (agents cannot replace SIMs).
 - When you have fully answered a simple inquiry and the customer says thanks / that's all, call resolve_conversation with a short reply (don't ask "anything else?" again).
-- Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre".
+- Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre". Pass the customer's town/area if they mentioned it anywhere in the chat; never guess it.
 - eSIM questions: call show_esim_steps (it names the only centre(s) that issue eSIMs).${mvno.sim_delivery ? "" : "\n- We do NOT deliver SIMs or eSIMs. Never offer or mention delivery; SIMs and eSIMs are collected in person."}
 - Only mention agents or the nearest agent/outlet when the customer asks where to go or asks about agents.
 
@@ -170,11 +170,14 @@ export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "find_nearest_outlets",
     description:
-      "Ask the customer to share their WhatsApp location, then send the nearest outlets. purpose 'agent' = top-ups and mobile money deposits/withdrawals; 'service_centre' = SIM replacement, eSIM, device support; 'any' otherwise.",
+      "Recommend the nearest outlets. If the customer already said where they are (town, area, district, landmark), pass it as area and the outlets are sent directly; otherwise pass an empty area and they're asked to type their town or share their location. purpose 'agent' = top-ups and mobile money deposits/withdrawals; 'service_centre' = SIM replacement, device support; 'any' otherwise.",
     input_schema: {
       type: "object",
-      properties: { purpose: { type: "string", enum: ["agent", "service_centre", "any"] } },
-      required: ["purpose"],
+      properties: {
+        purpose: { type: "string", enum: ["agent", "service_centre", "any"] },
+        area: { type: "string", description: "Where the customer is, in their words (e.g. 'Lira', 'near Gulu main market'). Empty string if unknown." },
+      },
+      required: ["purpose", "area"],
       additionalProperties: false,
     },
     strict: true,
@@ -377,4 +380,45 @@ export async function suggestReply(mvno: Mvno, contact: Contact, history: Messag
     .map((b) => b.text)
     .join("\n")
     .trim();
+}
+
+// ------------------------------------------------------------------ nearest outlet without GPS
+
+const OutletPick = z.object({
+  ids: z.array(z.string()).describe("Up to 3 outlet ids from the list, closest first. Empty if none is reasonably close (same region)."),
+  place: z.string().describe("Short name of the customer's town/area as you understood it, e.g. 'Lira'"),
+});
+
+/**
+ * Picks the outlets closest to a place the customer described (or a GPS point), using
+ * general knowledge of Ugandan geography. Only ever returns ids from the given list.
+ */
+export async function pickOutletsNear(
+  mvnoId: string,
+  where: string,
+  outlets: { id: string; name: string; address: string }[],
+): Promise<{ ids: string[]; place: string } | null> {
+  const c = claude();
+  if (!c || !outlets.length) return null;
+  const res = await c.messages.parse({
+    model: MODEL,
+    max_tokens: 1024,
+    output_config: { effort: "low", format: zodOutputFormat(OutletPick) },
+    system:
+      "You match a customer's location in Uganda to the nearest outlets from a fixed list. Use real Ugandan geography (towns, districts, distances, main roads). Only return ids that appear in the list. Prefer the same town, then the nearest town by road.",
+    messages: [
+      {
+        role: "user",
+        content: `Customer location: ${where.slice(0, 200)}\n\nOutlets (id | name | address):\n${outlets
+          .slice(0, 400)
+          .map((o) => `${o.id} | ${o.name} | ${o.address}`)
+          .join("\n")}`,
+      },
+    ],
+  });
+  await recordAiUsage(res, { kind: "bot_reply", mvnoId });
+  const out = res.parsed_output;
+  if (!out) return null;
+  const valid = new Set(outlets.map((o) => o.id));
+  return { ids: out.ids.filter((id) => valid.has(id)).slice(0, 3), place: out.place };
 }

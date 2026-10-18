@@ -5,6 +5,7 @@ import { bundleSummary, formatData, formatMoney, haversineKm } from "@/lib/forma
 import type { Bundle, Contact, Conversation, Delivery, Mvno, Outlet } from "@/lib/types";
 import type { OutboundMessage } from "@/lib/whatsapp/types";
 import { sendMessage, updateConversation, logEvent } from "@/lib/inbox/service";
+import { pickOutletsNear } from "./ai";
 
 // Deterministic, button-driven flows. Anything touching money runs here,
 // never through free-form AI output.
@@ -575,35 +576,53 @@ export async function nearestOutlets(mvnoId: string, at: { lat: number; lng: num
     .slice(0, limit);
 }
 
-export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }, kind?: OutletKind) {
-  const list = await nearestOutlets(ctx.mvno.id, at, kind);
-  if (!list.length) {
-    // Locations without GPS yet: ask for the area and search by name instead.
-    await setState(ctx, { flow: "outlets", awaiting: "location", data: { kind } });
-    await say(ctx, { type: "text", text: "Which *town or area* are you in? (e.g. Wandegeya, Masaka) I'll list the nearest ones there." });
-    return;
-  }
+const KIND_ICON = { store: "🏬", agent: "🧑‍💼", kiosk: "🏪" } as const;
+const ofKind = (list: Outlet[], kind?: OutletKind) => {
+  const k = kind ? list.filter((o) => (kind === "store" ? o.kind === "store" : o.kind !== "store")) : list;
+  return k.length ? k : list;
+};
+
+async function sendOutletList(ctx: FlowCtx, title: string, list: (Outlet & { km?: number })[]) {
   await setState(ctx, {});
-  const kindIcon = { store: "🏬", agent: "🧑‍💼", kiosk: "🏪" } as const;
   await say(ctx, {
     type: "text",
     text:
-      `*Nearest to you:*\n\n` +
+      `*${title}*\n\n` +
       list
         .map(
           (o, i) =>
-            `${i + 1}. ${kindIcon[o.kind]} *${o.name}* · ${o.km.toFixed(1)} km\n   ${o.address}\n   🕒 ${o.hours ?? "–"}${o.phone ? `  ☎️ ${o.phone}` : ""}`,
+            `${i + 1}. ${KIND_ICON[o.kind]} *${o.name}*${o.km !== undefined ? ` · ${o.km.toFixed(1)} km` : ""}\n   ${o.address}${o.hours ? `\n   🕒 ${o.hours}` : ""}${o.phone ? `  ☎️ ${o.phone}` : ""}`,
         )
-        .join("\n\n") +
-      `\n\n🏬 service centres: SIM swaps, eSIM, ${ctx.mvno.wallet_name}, device support · 🧑‍💼 agents: deposits, withdrawals, airtime & bundles`,
+        .join("\n\n"),
   });
   const top = list[0];
-  await say(ctx, { type: "location", lat: top.lat, lng: top.lng, name: top.name, address: top.address });
+  if (top && top.lat !== null && top.lng !== null) await say(ctx, { type: "location", lat: top.lat, lng: top.lng, name: top.name, address: top.address });
+}
+
+/** Asks the AI which outlets are closest to a place (works for outlets without GPS). */
+async function aiNearest(ctx: FlowCtx, where: string, kind?: OutletKind) {
+  const { data } = await supabaseAdmin().from("outlets").select("*").eq("mvno_id", ctx.mvno.id).limit(1000);
+  const pool = ofKind((data ?? []) as Outlet[], kind);
+  const pick = await pickOutletsNear(ctx.mvno.id, where, pool).catch(() => null);
+  if (!pick?.ids.length) return null;
+  const byId = new Map(pool.map((o) => [o.id, o]));
+  return { place: pick.place, list: pick.ids.map((id) => byId.get(id)!).filter(Boolean) };
+}
+
+/** Customer shared a GPS pin: distance for outlets with GPS; AI for the rest (many have no GPS yet). */
+export async function showOutlets(ctx: FlowCtx, at: { lat: number; lng: number }, kind?: OutletKind) {
+  const gps = await nearestOutlets(ctx.mvno.id, at, kind);
+  if (gps.length && gps[0].km <= 30) return sendOutletList(ctx, "Nearest to you:", gps);
+  const ai = await aiNearest(ctx, `GPS coordinates ${at.lat.toFixed(4)}, ${at.lng.toFixed(4)} (Uganda)`, kind);
+  if (ai) return sendOutletList(ctx, `Closest to you (${ai.place}):`, ai.list);
+  if (gps.length) return sendOutletList(ctx, "Nearest to you:", gps);
+  await setState(ctx, { flow: "outlets", awaiting: "location", data: { kind } });
+  await say(ctx, { type: "text", text: "Which *town or area* are you in? I'll find the nearest one for you." });
 }
 
 const AREA_STOP = new Set(["i", "im", "am", "in", "at", "near", "the", "my", "is", "area", "town", "place", "around", "stay", "live", "located", "from", "of", "and"]);
 
-/** Outlets whose name or address mentions the area the customer typed (for locations without GPS). */
+/** Customer typed where they are: direct name match first, then the AI's knowledge of Ugandan towns. */
 export async function showOutletsByArea(ctx: FlowCtx, text: string, kind?: OutletKind) {
   const words = text
     .toLowerCase()
@@ -612,7 +631,8 @@ export async function showOutletsByArea(ctx: FlowCtx, text: string, kind?: Outle
     .filter((w) => w.length >= 3 && !AREA_STOP.has(w))
     .slice(0, 4);
   if (!words.length) {
-    await say(ctx, { type: "text", text: "Type the name of your town or area (e.g. Wandegeya), or share your location 📍." });
+    await setState(ctx, { flow: "outlets", awaiting: "location", data: { kind } });
+    await say(ctx, { type: "text", text: "Which *town or area* are you in? (e.g. Gulu, Mbale) Or share your location 📍." });
     return;
   }
   const { data } = await supabaseAdmin()
@@ -621,25 +641,17 @@ export async function showOutletsByArea(ctx: FlowCtx, text: string, kind?: Outle
     .eq("mvno_id", ctx.mvno.id)
     .or(words.flatMap((w) => [`name.ilike.%${w}%`, `address.ilike.%${w}%`]).join(","))
     .limit(50);
-  const all = (data ?? []) as Outlet[];
-  const ofKind = kind ? all.filter((o) => (kind === "store" ? o.kind === "store" : o.kind !== "store")) : all;
-  const list = (ofKind.length ? ofKind : all).slice(0, 5);
-  if (!list.length) {
-    await say(ctx, {
-      type: "buttons",
-      body: `I couldn't find one in "${text.slice(0, 40)}" yet. Try a nearby town, or share your location 📍.`,
-      buttons: [{ id: "menu:main", title: "Main menu" }],
-    });
-    return; // keep waiting for another area or a location pin
-  }
-  await setState(ctx, {});
-  const kindIcon = { store: "🏬", agent: "🧑‍💼", kiosk: "🏪" } as const;
+  const direct = ofKind((data ?? []) as Outlet[], kind).slice(0, 5);
+  if (direct.length) return sendOutletList(ctx, `In ${text.slice(0, 40)}:`, direct);
+
+  const ai = await aiNearest(ctx, text, kind);
+  if (ai) return sendOutletList(ctx, `Closest to ${ai.place}:`, ai.list);
+
+  await setState(ctx, { flow: "outlets", awaiting: "location", data: { kind } });
   await say(ctx, {
-    type: "text",
-    text:
-      `*In ${text.slice(0, 40)}:*\n\n` +
-      list.map((o, i) => `${i + 1}. ${kindIcon[o.kind]} *${o.name}*\n   ${o.address}\n   🕒 ${o.hours ?? "–"}${o.phone ? `  ☎️ ${o.phone}` : ""}`).join("\n\n") +
-      `\n\n🏬 service centres: SIM swaps, eSIM, ${ctx.mvno.wallet_name}, device support · 🧑‍💼 agents: deposits, withdrawals, airtime & bundles`,
+    type: "buttons",
+    body: `I couldn't find one near "${text.slice(0, 40)}" yet. Try the nearest big town, or share your location 📍.`,
+    buttons: [{ id: "menu:main", title: "Main menu" }],
   });
 }
 

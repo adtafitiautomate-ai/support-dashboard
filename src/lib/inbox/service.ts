@@ -399,6 +399,13 @@ export async function resolveConversation(
   askCsat = true,
   note = "Conversation resolved",
 ) {
+  // Rate limit the survey per customer: at most once every csat_every_days (default 14).
+  if (askCsat) {
+    const every = mvno.csat_every_days ?? 14;
+    const { data: c } = await supabaseAdmin().from("contacts").select("csat_asked_at").eq("id", contact.id).maybeSingle();
+    const last = c?.csat_asked_at ? new Date(c.csat_asked_at).getTime() : 0;
+    if (every > 0 && Date.now() - last < every * 86_400_000) askCsat = false;
+  }
   const updated = await updateConversation(conv.id, {
     status: "resolved",
     resolved_at: new Date().toISOString(),
@@ -407,6 +414,7 @@ export async function resolveConversation(
   });
   await logEvent(updated, note, actorId);
   if (askCsat) {
+    await supabaseAdmin().from("contacts").update({ csat_asked_at: new Date().toISOString() }).eq("id", contact.id);
     await sendMessage(
       mvno,
       updated,

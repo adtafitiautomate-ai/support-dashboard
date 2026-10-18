@@ -21,6 +21,7 @@ export interface Mvno {
   alert_emails: string[];
   number_prefixes: string[];
   sim_delivery?: boolean; // offers SIM/eSIM home delivery
+  csat_every_days?: number; // ask each customer for a rating at most this often (0 = every chat)
   escalation_contacts: EscalationContact[];
   wa_phone_number_id: string | null;
   wa_display_number: string | null;
@@ -66,6 +67,7 @@ export interface Contact {
   last_location: { lat: number; lng: number; at: string } | null;
   privacy_notice_sent_at?: string | null;
   opted_out_at?: string | null;
+  csat_asked_at?: string | null;
   created_at: string;
   last_seen_at: string | null;
 }

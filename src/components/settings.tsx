@@ -101,6 +101,7 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
     greeting: mvno.greeting,
     bot_persona: mvno.bot_persona,
     sla_first_response_mins: mvno.sla_first_response_mins,
+    csat_every_days: mvno.csat_every_days ?? 14,
     brand_color: mvno.brand_color,
     business_hours: mvno.business_hours ?? { tz: "Africa/Kampala", open: "08:00", close: "20:00", days: [0, 1, 2, 3, 4, 5, 6] },
   });
@@ -141,6 +142,16 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
           className={cx(input, "w-32")}
           value={form.sla_first_response_mins}
           onChange={(e) => setForm({ ...form, sla_first_response_mins: Number(e.target.value) })}
+        />
+      </Field>
+      <Field label="Ask customers for a rating at most every (days)" hint="After a chat is resolved, customers get the 😀 / 😐 / 😞 survey only if they weren't asked within this many days. 14 ≈ twice a month; 0 = after every chat.">
+        <input
+          type="number"
+          min={0}
+          max={365}
+          className={cx(input, "w-32")}
+          value={form.csat_every_days}
+          onChange={(e) => setForm({ ...form, csat_every_days: Math.max(0, Math.min(365, Number(e.target.value) || 0)) })}
         />
       </Field>
       <Field
