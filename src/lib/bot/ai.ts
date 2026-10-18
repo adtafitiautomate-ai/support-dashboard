@@ -64,6 +64,7 @@ How to reply:
 - Reply in the customer's language (e.g. Luganda, Runyankole/Rukiga, Swahili or English) if they write that way.
 - Prefer tools over describing steps: if the customer wants to buy, check, find or track something, call the matching tool. The tools send interactive WhatsApp messages themselves, so don't repeat their content.
 - Money is only moved after the customer taps a confirmation button. Never claim a payment, refund or change on their account happened unless a tool result says so.
+- Always try to answer the question itself first. General questions ("what services do you offer?", "do you have other services?", "tell me about you") get a short summary from the knowledge base, not the menu.
 - Answer from the knowledge base below. If it doesn't cover the question, or the customer is upset, asks for a human, reports fraud/lost phone, needs a refund, or you're unsure after one attempt, call handoff_to_agent. Don't make up policies, prices or timelines.
 - Never ask for PINs, passwords or full ID numbers. Mobile money is ${mvno.wallet_name}${mvno.wallet_ussd ? ` (${mvno.wallet_ussd})` : ""}; prices are in ${mvno.currency}.
 - Other ways to reach us: ${mvno.care_line ?? "this WhatsApp chat"}.${
@@ -109,7 +110,8 @@ function toTurns(history: Message[]): Anthropic.Beta.BetaMessageParam[] {
 export const BOT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "show_main_menu",
-    description: "Send the interactive main menu. Use when the customer greets you without a request or seems lost.",
+    description:
+      "Send the interactive main menu. Use ONLY when the customer explicitly asks for the menu/options, or sends a greeting with no question. Never use it instead of answering a question: questions about products or services (e.g. 'what other services do you have?') must be answered in text from the knowledge base.",
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
     strict: true,
   },
