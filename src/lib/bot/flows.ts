@@ -365,6 +365,18 @@ export async function showWallet(ctx: FlowCtx) {
   });
 }
 
+/**
+ * The "how to buy" steps from the tenant's knowledge base (an article titled about buying/purchasing),
+ * trimmed to fit a WhatsApp message. Null when there's no such article.
+ */
+async function buyingSteps(mvnoId: string, max: number): Promise<string | null> {
+  const { data } = await supabaseAdmin().rpc("search_kb", { p_mvno: mvnoId, p_query: "how to buy bundles", p_limit: 8 });
+  const hit = ((data ?? []) as { title: string; body: string }[]).find((a) => /\b(buy|buying|purchase|purchasing)\b/i.test(a.title));
+  if (!hit) return null;
+  const body = hit.body.trim();
+  return body.length <= max ? body : `${body.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
+}
+
 export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
   const { data: b } = await supabaseAdmin().from("bundles").select("*").eq("id", bundleId).eq("mvno_id", ctx.mvno.id).maybeSingle();
   if (!b) return showBundles(ctx);
