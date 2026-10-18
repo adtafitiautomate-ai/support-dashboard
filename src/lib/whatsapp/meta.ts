@@ -163,6 +163,9 @@ interface MetaInboundMessage {
   video?: { id: string; caption?: string; mime_type?: string };
   document?: { id: string; caption?: string; filename?: string; mime_type?: string };
   sticker?: { id: string; mime_type?: string };
+  reaction?: { message_id?: string; emoji?: string };
+  contacts?: { name?: { formatted_name?: string }; phones?: { phone?: string; wa_id?: string }[] }[];
+  errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[];
 }
 
 export interface ParsedBatch {
@@ -228,7 +231,30 @@ function normalizeInbound(m: MetaInboundMessage, profileName?: string): InboundM
     case "audio":
     case "sticker":
       return { ...base, type: m.type, mediaId: m[m.type]?.id, mime: m[m.type]?.mime_type };
-    default:
-      return { ...base, type: "unknown" };
+    case "reaction":
+      return {
+        ...base,
+        type: "unknown",
+        rawType: "reaction",
+        silent: true,
+        text: m.reaction?.emoji ? `Reacted ${m.reaction.emoji} to a message` : "Removed a reaction",
+        raw: m as unknown as Record<string, unknown>,
+      };
+    case "contacts": {
+      const people = (m.contacts ?? []).map((c) => [c.name?.formatted_name, ...(c.phones ?? []).map((p) => p.phone ?? p.wa_id)].filter(Boolean).join(" "));
+      return { ...base, type: "unknown", rawType: "contacts", text: `📇 Shared contact: ${people.join("; ") || "(no details)"}`, raw: m as unknown as Record<string, unknown> };
+    }
+    default: {
+      // "unsupported"/"unknown" (view-once media, polls, events, edits...): keep Meta's reason.
+      const e = m.errors?.[0];
+      const why = e?.error_data?.details ?? e?.message ?? e?.title;
+      return {
+        ...base,
+        type: "unknown",
+        rawType: m.type,
+        text: `⚠️ Unsupported WhatsApp message (${m.type}${why ? `: ${why}` : ""}). Ask the customer to resend it as a normal photo, document or text.`,
+        raw: m as unknown as Record<string, unknown>,
+      };
+    }
   }
 }

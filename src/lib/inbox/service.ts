@@ -146,7 +146,7 @@ export async function recordInbound(conv: Conversation, msg: InboundMessage): Pr
       sender_type: "contact",
       type: msg.type,
       body,
-      payload: { replyId: msg.replyId, location: msg.location, mediaId: msg.mediaId, filename: msg.filename, mime: msg.mime },
+      payload: { replyId: msg.replyId, location: msg.location, mediaId: msg.mediaId, filename: msg.filename, mime: msg.mime, rawType: msg.rawType, raw: msg.raw },
       wa_message_id: msg.waMessageId,
       status: "received",
       created_at: msg.timestamp.toISOString(),

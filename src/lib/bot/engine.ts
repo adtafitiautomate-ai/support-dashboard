@@ -79,6 +79,15 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   if (!stored) return; // duplicate webhook delivery
   void markReadAndTyping(mvno, msg.waMessageId);
 
+  // Delivered late (e.g. held by Meta while the number moved), or a reaction: keep it, don't reply.
+  // WhatsApp rejects free-form replies more than 24h after the customer's message anyway.
+  const stale = Date.now() - msg.timestamp.getTime() > 23 * 3_600_000;
+  if (stale || msg.silent) {
+    if (stale) await logEvent(conv, "Message arrived late (sent " + msg.timestamp.toLocaleString("en-GB", { timeZone: "Africa/Kampala" }) + "): bot did not reply");
+    if (msg.mediaId) await storeInboundMedia(stored).catch((e) => console.error("media", e));
+    return;
+  }
+
   // Save photos / voice notes / documents in parallel with the reply, so media never slows the bot.
   const mediaJob = msg.mediaId ? storeInboundMedia(stored).catch((e) => console.error("media", e)) : null;
   try {
@@ -249,6 +258,18 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   // A plain greeting ("Hi", "Asalam alaikum") always gets the MVNO's configured greeting + menu,
   // never an improvised AI reply. Greetings with a question attached still go to the AI.
   if (isGreeting(text) && (isFirst || isJustGreeting(text))) return F.showMenu(ctx, greetingReply(ctx.mvno.greeting, text));
+
+  // View-once media, polls, events, edits...: WhatsApp doesn't pass these to businesses.
+  if (msg.type === "unknown" && msg.rawType !== "contacts") {
+    return F.say(ctx, {
+      type: "buttons",
+      body: "Sorry, I couldn't open that message (WhatsApp doesn't share view-once photos, polls or similar with businesses). Please send it again as a normal photo, document or text.",
+      buttons: [
+        { id: "menu:human", title: "Talk to an agent" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+  }
 
   if (!text) {
     return F.say(ctx, {

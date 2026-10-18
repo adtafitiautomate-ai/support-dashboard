@@ -40,6 +40,12 @@ export interface InboundMessage {
   mime?: string;
   filename?: string;
   caption?: string;
+  /** Meta's own type when it isn't one we handle (e.g. "unsupported", "reaction", "contacts"). */
+  rawType?: string;
+  /** The original Meta message, kept for anything unusual so it can be diagnosed later. */
+  raw?: Record<string, unknown>;
+  /** Not meant for the bot (e.g. a reaction): store it, don't reply. */
+  silent?: boolean;
 }
 
 export interface StatusUpdate {
