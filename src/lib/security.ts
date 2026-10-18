@@ -10,6 +10,7 @@ export const LIMITS = {
   kbIngest: { limit: 20, windowSecs: 3600 }, // documents/links per user / hour
   reports: { limit: 60, windowSecs: 600 }, // report runs per user / 10 min
   outreach: { limit: 30, windowSecs: 3600 }, // template conversations per user / hour
+  escalate: { limit: 20, windowSecs: 3600 }, // escalation emails per user / hour
   admin: { limit: 120, windowSecs: 600 }, // admin console actions / 10 min
   botAiPerCustomer: { limit: 30, windowSecs: 3600 }, // Claude replies per customer / hour
 } as const;

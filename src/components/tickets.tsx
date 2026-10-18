@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, CheckCircle2, Clock3, Loader2, MessageSquareText, Search, Send, Sparkles, Ticket, X } from "lucide-react";
+import { Bot, CheckCircle2, Clock3, Loader2, Megaphone, MessageSquareText, Search, Send, Sparkles, Ticket, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { upsertConversation, useStore } from "@/lib/store";
 import type { Contact, Conversation, ConversationStatus, Message, Priority } from "@/lib/types";
@@ -207,6 +207,7 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [escalating, setEscalating] = useState(false);
 
   const load = useCallback(async () => {
     const supabase = supabaseBrowser();
@@ -286,7 +287,7 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Ticket details"
-        className="m-2 flex h-[calc(100%-1rem)] w-full max-w-140 flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5"
+        className="relative m-2 flex h-[calc(100%-1rem)] w-full max-w-140 flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5"
       >
         {!t ? (
           <div className="grid flex-1 place-items-center">
@@ -297,7 +298,7 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
             <header className="border-b border-line px-6 pt-4 pb-5">
               {/* Toolbar row: identity left, actions right, never overlapping the title */}
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold tabular-nums">#{t.ticket_no}</span>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold tabular-nums">{t.ticket_no ? `#${t.ticket_no}` : "Bot chat"}</span>
                 <span className="inline-flex items-center gap-1.5 text-xs text-muted">
                   <span className="size-2 rounded-full" style={{ background: s.mvnos.get(t.mvno_id)?.brand_color }} />
                   {s.mvnos.get(t.mvno_id)?.name}
@@ -306,6 +307,13 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
                   {t.priority}
                 </Badge>
                 <div className="ml-auto flex items-center gap-1">
+                  <button
+                    onClick={() => setEscalating(true)}
+                    className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-black/10 transition hover:bg-zinc-100"
+                    title="Email this ticket to the team that needs to act on it"
+                  >
+                    <Megaphone className="size-3.5" /> Escalate
+                  </button>
                   <Link
                     href={`/inbox?c=${t.id}`}
                     className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-700"
@@ -375,9 +383,26 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
                   </select>
                 </label>
               </div>
+              {t.escalated_at && (
+                <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+                  <Megaphone className="size-3.5 shrink-0" /> Escalated to <b className="font-semibold">{t.escalated_to}</b> {relTime(t.escalated_at, now)} ago
+                </p>
+              )}
               {error && <p className="mt-2 text-xs text-danger">{error}</p>}
             </header>
 
+            {escalating && (
+              <EscalateDialog
+                ticket={t}
+                onClose={() => setEscalating(false)}
+                onDone={async (conv) => {
+                  upsertConversation(conv);
+                  setEscalating(false);
+                  await load();
+                  onChanged();
+                }}
+              />
+            )}
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {/* Facts */}
               <div className="grid grid-cols-2 gap-2 text-[13px]">
@@ -472,6 +497,130 @@ function Fact({ label, value, sub, tone }: { label: string; value: string; sub?:
       <div className="text-[11px] text-muted">{label}</div>
       <div className={cx("font-medium", tone === "red" && "text-danger")}>{value}</div>
       {sub && <div className={cx("text-[11px]", tone === "red" ? "text-danger" : "text-muted")}>{sub}</div>}
+    </div>
+  );
+}
+
+function EscalateDialog({ ticket, onClose, onDone }: { ticket: Row; onClose: () => void; onDone: (c: Conversation) => void }) {
+  const mvno = useStore((s) => s.mvnos.get(ticket.mvno_id));
+  const canTypeAddress = useStore(
+    (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && m.mvno_id === ticket.mvno_id && m.role !== "agent"),
+  );
+  const contacts = mvno?.escalation_contacts ?? [];
+  const [picked, setPicked] = useState<string[]>([]);
+  const [extra, setExtra] = useState("");
+  const [note, setNote] = useState("");
+  const [transcript, setTranscript] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ready = (picked.length > 0 || extra.trim().length > 0) && note.trim().length >= 3;
+
+  async function send() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { conversation } = await api<{ conversation: Conversation }>(`/api/conversations/${ticket.id}/escalate`, {
+        contactIds: picked,
+        extraEmail: extra.trim() || undefined,
+        note,
+        includeTranscript: transcript,
+      });
+      onDone(conversation);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="absolute inset-0 z-10 grid place-items-center bg-white/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (ready && !busy) void send();
+        }}
+        className="w-full max-w-md space-y-4 rounded-3xl bg-white p-5 shadow-2xl ring-1 ring-black/10"
+      >
+        <div className="flex items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+            <Megaphone className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold">Escalate {ticket.ticket_no ? `ticket #${ticket.ticket_no}` : "this chat"}</h3>
+            <p className="text-xs text-muted">Emails the ticket details to the team that needs to act. The customer is not notified.</p>
+          </div>
+          <button type="button" onClick={onClose} className="grid size-8 place-items-center rounded-full text-muted hover:bg-zinc-100" aria-label="Close">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-muted">Send to</div>
+          {contacts.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {contacts.map((c) => {
+                const on = picked.includes(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setPicked(on ? picked.filter((x) => x !== c.id) : [...picked, c.id])}
+                    title={c.emails.join(", ")}
+                    className={cx("rounded-full px-3 py-1.5 text-[13px] font-medium ring-1 transition", on ? "bg-zinc-900 text-white ring-zinc-900" : "ring-black/10 hover:bg-zinc-100")}
+                  >
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-muted">
+              No escalation contacts set for {mvno?.name}. An MVNO admin can add them in Settings → Escalations.
+            </p>
+          )}
+          {canTypeAddress && (
+            <input
+              type="email"
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              placeholder="Or type an email address"
+              className="mt-2 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30"
+            />
+          )}
+        </div>
+
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-muted">What do you need from them?</span>
+          <textarea
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={2000}
+            placeholder="e.g. Customer was debited UGX 20,000 for a bundle they didn't receive. Please confirm and reverse."
+            className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30"
+            autoFocus
+          />
+        </label>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={transcript} onChange={(e) => setTranscript(e.target.checked)} className="size-4 accent-zinc-900" />
+          Include the recent chat (last 30 messages)
+        </label>
+
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-full px-4 py-2 text-sm font-medium text-muted hover:bg-zinc-100">
+            Cancel
+          </button>
+          <button
+            disabled={!ready || busy}
+            className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Send escalation
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

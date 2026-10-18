@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, MessageSquareText, Plus, Smartphone, Trash2 } from "lucide-react";
+import { Bot, Megaphone, MessageSquareText, Plus, Smartphone, Trash2 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { patch, useStore } from "@/lib/store";
-import type { CannedResponse, Mvno } from "@/lib/types";
+import type { CannedResponse, EscalationContact, Mvno } from "@/lib/types";
 import { api, Badge, Button, cx } from "./ui";
 import { PageHeader } from "./app-shell";
 
-type Tab = "bot" | "whatsapp" | "canned";
+type Tab = "bot" | "whatsapp" | "canned" | "escalations";
 
 const TABS: { id: Tab; label: string; icon: typeof Bot }[] = [
   { id: "bot", label: "Bot & SLA", icon: Bot },
   { id: "whatsapp", label: "WhatsApp number", icon: Smartphone },
   { id: "canned", label: "Saved replies", icon: MessageSquareText },
+  { id: "escalations", label: "Escalations", icon: Megaphone },
 ];
 
 export function SettingsView() {
@@ -27,7 +28,7 @@ export function SettingsView() {
       <div className="mx-auto max-w-4xl">
         <PageHeader
           title="Settings"
-          subtitle="Bot personality, SLAs, WhatsApp connection and saved replies, per MVNO"
+          subtitle="Bot personality, SLAs, WhatsApp connection, saved replies and escalation contacts, per MVNO"
           actions={
             <select value={mvnoId} onChange={(e) => setMvnoId(e.target.value)} className="h-9 rounded-full bg-surface px-3 text-sm shadow-sm ring-1 ring-black/5 outline-none">
               {mvnos.map((m) => (
@@ -55,6 +56,7 @@ export function SettingsView() {
         {mvno && tab === "bot" && <BotSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "whatsapp" && <WhatsAppSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "canned" && <CannedSettings key={mvno.id} mvno={mvno} />}
+        {mvno && tab === "escalations" && <EscalationSettings key={mvno.id} mvno={mvno} />}
       </div>
     </div>
   );
@@ -281,5 +283,68 @@ function CannedSettings({ mvno }: { mvno: Mvno }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+const EMAIL = /^[^s@]+@[^s@]+.[^s@]+$/;
+
+/** Who tickets can be escalated to by email (Finance, Network, Billing...). */
+function EscalationSettings({ mvno }: { mvno: Mvno }) {
+  const [rows, setRows] = useState<{ id: string; name: string; emails: string }[]>(() =>
+    (mvno.escalation_contacts ?? []).map((c) => ({ id: c.id, name: c.name, emails: c.emails.join(", ") })),
+  );
+  const saver = useSaver();
+  const update = (i: number, k: "name" | "emails", v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+
+  return (
+    <form
+      className="space-y-4 card p-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void saver.run(async () => {
+          const contacts: EscalationContact[] = [];
+          for (const r of rows) {
+            const emails = r.emails.split(/[,;s]+/).map((s) => s.trim()).filter(Boolean);
+            if (!r.name.trim() && !emails.length) continue;
+            if (!r.name.trim()) return { error: { message: "Each contact needs a name, e.g. Finance" } };
+            const bad = emails.find((x) => !EMAIL.test(x));
+            if (bad) return { error: { message: `"${bad}" is not a valid email` } };
+            if (!emails.length) return { error: { message: `Add at least one email for ${r.name}` } };
+            contacts.push({ id: r.id, name: r.name.trim().slice(0, 60), emails: [...new Set(emails)].slice(0, 10) });
+          }
+          const res = await supabaseBrowser().from("mvnos").update({ escalation_contacts: contacts }).eq("id", mvno.id).select().single();
+          if (res.data) patch((s) => s.mvnos.set(mvno.id, res.data as Mvno));
+          if (!res.error && !res.data) return { error: { message: "Only MVNO admins can change these settings" } };
+          return res;
+        });
+      }}
+    >
+      <div>
+        <div className="text-sm font-medium">Escalation contacts</div>
+        <p className="mt-0.5 text-xs text-muted">
+          Teams an agent can escalate a ticket to from the ticket view. They receive an email with the ticket details and recent chat. Agents can only pick from this
+          list; supervisors and admins can also type a one-off address.
+        </p>
+      </div>
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={r.id} className="grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+            <input className={input} placeholder="Team, e.g. Finance" value={r.name} onChange={(e) => update(i, "name", e.target.value)} />
+            <input className={input} placeholder="finance@company.com, recon@company.com" value={r.emails} onChange={(e) => update(i, "emails", e.target.value)} />
+            <Button type="button" variant="ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label={`Remove ${r.name || "contact"}`}>
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+        ))}
+        {!rows.length && <p className="text-sm text-muted">No escalation contacts yet.</p>}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" onClick={() => setRows([...rows, { id: crypto.randomUUID(), name: "", emails: "" }])}>
+          <Plus className="size-4" /> Add contact
+        </Button>
+        <Button variant="primary">Save</Button>
+        <SaveMsg msg={saver.msg} />
+      </div>
+    </form>
   );
 }

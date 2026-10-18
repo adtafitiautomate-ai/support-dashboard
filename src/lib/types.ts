@@ -20,6 +20,7 @@ export interface Mvno {
   finance_emails: string[];
   alert_emails: string[];
   number_prefixes: string[];
+  escalation_contacts: EscalationContact[];
   wa_phone_number_id: string | null;
   wa_display_number: string | null;
   bot_name: string;
@@ -27,6 +28,12 @@ export interface Mvno {
   greeting: string;
   sla_first_response_mins: number;
   business_hours: { tz: string; open: string; close: string; days: number[] };
+}
+
+export interface EscalationContact {
+  id: string;
+  name: string; // e.g. Finance, Network, Billing
+  emails: string[];
 }
 
 export interface Profile {
@@ -72,6 +79,8 @@ export interface BotState {
 
 export interface Conversation {
   id: string;
+  escalated_at?: string | null;
+  escalated_to?: string | null;
   ticket_no: number | null; // set only once a person is involved (handoff or assignment)
   mvno_id: string;
   contact_id: string;
