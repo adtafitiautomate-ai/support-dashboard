@@ -33,7 +33,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
             .eq("mvno_id", conv.mvno_id)
             .eq("user_id", body.userId)
             .maybeSingle();
-          if (!member) throw new HttpError(400, "That agent is not on this MVNO's team");
+          if (!member) throw new HttpError(400, "That agent is not on this tenant's team");
           const name = (member.profiles as unknown as { full_name: string }).full_name;
           const updated = await updateConversation(conv.id, {
             assignee_id: body.userId,

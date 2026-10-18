@@ -93,7 +93,7 @@ export function AiUsage() {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <UsageTable title="By MVNO" rows={data.byMvno} label={(k) => (k === "none" ? "Not linked to an MVNO" : (mvnos.get(k)?.name ?? "Deleted MVNO"))} priced={data.priced} />
+        <UsageTable title="By tenant" rows={data.byMvno} label={(k) => (k === "none" ? "Not linked to a tenant" : (mvnos.get(k)?.name ?? "Deleted tenant"))} priced={data.priced} />
         <UsageTable title="By purpose" rows={data.byKind} label={(k) => KIND_LABEL[k] ?? k} priced={data.priced} />
       </div>
       {data.byModel.length > 0 && (

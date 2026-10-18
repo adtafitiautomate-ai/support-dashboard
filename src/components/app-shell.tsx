@@ -319,7 +319,7 @@ function ProfileMenu() {
           <span className="block text-[13px] font-semibold">{me.full_name}</span>
           <span className="flex items-center gap-1 text-[11px] text-muted">
             <span className={cx("size-1.5 rounded-full", current.dot)} /> {me.status}
-            {me.is_platform_admin ? " · admin" : roles ? ` · ${roles} MVNO${roles > 1 ? "s" : ""}` : ""}
+            {me.is_platform_admin ? " · admin" : roles ? ` · ${roles} tenant${roles > 1 ? "s" : ""}` : ""}
           </span>
         </span>
         <ChevronDown className="size-3.5 text-muted" />

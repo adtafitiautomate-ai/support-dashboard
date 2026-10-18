@@ -28,7 +28,7 @@ export function SettingsView() {
       <div className="mx-auto max-w-4xl">
         <PageHeader
           title="Settings"
-          subtitle="Bot personality, SLAs, WhatsApp connection, saved replies and escalation contacts, per MVNO"
+          subtitle="Bot personality, SLAs, WhatsApp connection, saved replies and escalation contacts, per tenant"
           actions={
             <select value={mvnoId} onChange={(e) => setMvnoId(e.target.value)} className="h-9 rounded-full bg-surface px-3 text-sm shadow-sm ring-1 ring-black/5 outline-none">
               {mvnos.map((m) => (
@@ -115,7 +115,7 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
         void saver.run(async () => {
           const res = await supabaseBrowser().from("mvnos").update(form).eq("id", mvno.id).select().single();
           if (res.data) patch((s) => s.mvnos.set(mvno.id, res.data as Mvno));
-          if (!res.error && !res.data) return { error: { message: "Only MVNO admins can change these settings" } };
+          if (!res.error && !res.data) return { error: { message: "Only tenant admins can change these settings" } };
           return res;
         });
       }}
@@ -344,7 +344,7 @@ function EscalationSettings({ mvno }: { mvno: Mvno }) {
           }
           const res = await supabaseBrowser().from("mvnos").update({ escalation_contacts: contacts }).eq("id", mvno.id).select().single();
           if (res.data) patch((s) => s.mvnos.set(mvno.id, res.data as Mvno));
-          if (!res.error && !res.data) return { error: { message: "Only MVNO admins can change these settings" } };
+          if (!res.error && !res.data) return { error: { message: "Only tenant admins can change these settings" } };
           return res;
         });
       }}

@@ -80,7 +80,7 @@ export function AdminConsole() {
         title="Super admin"
         subtitle={
           <>
-            <ShieldCheck className="size-3.5" /> Create MVNOs, issue logins and manage access across the platform
+            <ShieldCheck className="size-3.5" /> Create tenants, issue logins and manage access across the platform
           </>
         }
         actions={
@@ -92,7 +92,7 @@ export function AdminConsole() {
               onClick={() => setEditing({ name: "", brand_color: "#111827", currency: "UGX", bot_name: "Assistant", wallet_name: "mobile money", sla_first_response_mins: 5 })}
               className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-md ring-1 ring-black/10 hover:bg-zinc-50"
             >
-              <Plus className="size-4" /> New MVNO
+              <Plus className="size-4" /> New tenant
             </button>
           </>
         }
@@ -101,7 +101,7 @@ export function AdminConsole() {
       <div className="glass mb-4 inline-flex rounded-full p-1">
         {(
           [
-            ["mvnos", "MVNOs", Building2, data.mvnos.length],
+            ["mvnos", "Tenants", Building2, data.mvnos.length],
             ["users", "Users", Users, data.users.length],
             ["email", "Email", Mail, ""],
             ["ai", "AI usage", Cpu, ""],
@@ -168,7 +168,7 @@ export function AdminConsole() {
               <thead className="bg-white/70 text-left text-muted">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">User</th>
-                  <th className="px-4 py-2.5 font-medium">MVNO access</th>
+                  <th className="px-4 py-2.5 font-medium">Tenant access</th>
                   <th className="px-4 py-2.5 font-medium">Last sign-in</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
                   <th className="px-4 py-2.5 text-right font-medium">Actions</th>
@@ -313,7 +313,7 @@ function UserRow({
               }}
               className="rounded-full border border-line bg-white px-2 py-0.5 text-xs"
             >
-              <option value="">Choose MVNO…</option>
+              <option value="">Choose tenant…</option>
               {available.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -323,7 +323,7 @@ function UserRow({
           ) : (
             available.length > 0 && (
               <button onClick={() => setAdding(true)} className="rounded-full px-2 py-0.5 text-xs text-muted ring-1 ring-black/10 ring-dashed hover:text-ink">
-                + MVNO
+                + Tenant
               </button>
             )
           )}
@@ -465,7 +465,7 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
   }
 
   return (
-    <Modal title={isNew ? "New MVNO" : `Edit ${initial.name}`} onClose={onClose}>
+    <Modal title={isNew ? "New tenant" : `Edit ${initial.name}`} onClose={onClose}>
       <form onSubmit={save} className="space-y-3">
         <div className="grid grid-cols-[1fr_88px] gap-3">
           <L label="Brand name">
@@ -534,12 +534,12 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
         </div>
         {isNew && (
           <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-muted">
-            The new MVNO starts on the simulator. Connect its WhatsApp number in Settings → WhatsApp number, then add bundles, outlets and knowledge in the Knowledge page.
+            The new tenant starts on the simulator. Connect its WhatsApp number in Settings → WhatsApp number, then add bundles, outlets and knowledge in the Knowledge page.
           </p>
         )}
         {error && <p className="text-sm text-danger">{error}</p>}
         <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-2.5 text-sm font-medium text-white disabled:opacity-60">
-          {busy && <Loader2 className="size-4 animate-spin" />} {isNew ? "Create MVNO" : "Save changes"}
+          {busy && <Loader2 className="size-4 animate-spin" />} {isNew ? "Create tenant" : "Save changes"}
         </button>
       </form>
     </Modal>
@@ -603,7 +603,7 @@ function CreateUser({
           <input required type="email" className={field} value={f.contact_email} onChange={(e) => setF({ ...f, contact_email: e.target.value })} placeholder="name@company.com" />
         </L>
         <div className="grid grid-cols-2 gap-3">
-          <L label="MVNO">
+          <L label="Tenant">
             <select className={field} value={f.mvno_id} onChange={(e) => setF({ ...f, mvno_id: e.target.value })}>
               <option value="">None</option>
               {mvnos.map((m) => (
@@ -626,7 +626,7 @@ function CreateUser({
         </L>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={f.platform_admin} onChange={(e) => setF({ ...f, platform_admin: e.target.checked })} />
-          Super admin (access to every MVNO and this console)
+          Super admin (access to every tenant and this console)
         </label>
         {error && <p className="text-sm text-danger">{error}</p>}
         <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-2.5 text-sm font-medium text-white disabled:opacity-60">

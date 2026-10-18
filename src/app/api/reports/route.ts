@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     if (!allowed.length) throw new HttpError(403, "Reports are available to admins and supervisors");
     const mvno = p.get("mvno") ?? "all";
     const mvnoIds = mvno === "all" ? allowed : allowed.filter((id) => id === mvno);
-    if (!mvnoIds.length) throw new HttpError(403, "You can't run reports for this MVNO");
+    if (!mvnoIds.length) throw new HttpError(403, "You can't run reports for this tenant");
     await enforce(`reports:${profile.id}`, LIMITS.reports);
 
     const toExclusive = new Date(`${to}T00:00:00Z`);

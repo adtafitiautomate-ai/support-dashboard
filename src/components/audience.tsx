@@ -108,7 +108,7 @@ export function AudienceView() {
                   <Megaphone className="mb-2 size-6" />
                   No number ranges set yet.
                   <br />
-                  {canEdit ? "Add your MVNO's ranges on the left to build the audience." : "Ask an MVNO admin to add the number ranges."}
+                  {canEdit ? "Add your tenant's ranges on the left to build the audience." : "Ask a tenant admin to add the number ranges."}
                 </div>
               ) : (
                 <>

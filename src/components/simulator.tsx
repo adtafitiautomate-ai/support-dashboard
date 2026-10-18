@@ -83,11 +83,11 @@ export function Simulator() {
         <div>
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight">Simulator</h1>
           <p className="mt-1 text-sm text-muted">
-            Chat as a customer to test the bot and inbox end to end, with no phone needed. MVNOs wired to a real Meta number still work here; replies just won&apos;t reach a real handset.
+            Chat as a customer to test the bot and inbox end to end, with no phone needed. Tenants wired to a real Meta number still work here; replies just won&apos;t reach a real handset.
           </p>
         </div>
         <label className="block text-sm">
-          <span className="mb-1 block text-xs font-medium text-muted">MVNO (WhatsApp number)</span>
+          <span className="mb-1 block text-xs font-medium text-muted">Tenant (WhatsApp number)</span>
           <select value={mvnoId} onChange={(e) => setMvnoId(e.target.value)} className="w-full rounded-lg border border-line bg-surface-2 px-2 py-1.5">
             {mvnos.map((m) => (
               <option key={m.id} value={m.id}>

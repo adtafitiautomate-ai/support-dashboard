@@ -79,7 +79,7 @@ export function TeamView() {
         title="Team"
         subtitle={
           <>
-            <Users className="size-3.5" /> Create logins and manage who works on {mvnoName || "your MVNO"}
+            <Users className="size-3.5" /> Create logins and manage who works on {mvnoName || "your tenant"}
           </>
         }
         actions={
@@ -235,7 +235,7 @@ export function TeamView() {
 
       <p className="mt-3 text-xs text-muted">
         Roles: <b>Agent</b>: chats &amp; tickets · <b>Supervisor</b>: + insights, reports, knowledge · <b>Admin</b>: + settings, simulator, team. Password resets and
-        disabling apply to the whole account, so they&apos;re only available for people who work solely on MVNOs you administer.
+        disabling apply to the whole account, so they&apos;re only available for people who work solely on tenants you administer.
       </p>
 
       {adding && (

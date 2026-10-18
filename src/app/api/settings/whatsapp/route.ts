@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       .eq("mvno_id", body.mvnoId)
       .eq("user_id", profile.id)
       .maybeSingle();
-    if (!profile.is_platform_admin && membership?.role !== "admin") throw new HttpError(403, "Only MVNO admins can change the WhatsApp connection");
+    if (!profile.is_platform_admin && membership?.role !== "admin") throw new HttpError(403, "Only tenant admins can change the WhatsApp connection");
 
     const db = supabaseAdmin();
     const { data: mvno } = await db.from("mvnos").select("slug").eq("id", body.mvnoId).single();
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       .from("mvnos")
       .update({ wa_phone_number_id: phoneNumberId, ...(body.displayNumber ? { wa_display_number: body.displayNumber } : {}) })
       .eq("id", body.mvnoId);
-    if (error?.code === "23505") throw new HttpError(409, "That phone number ID is already connected to another MVNO");
+    if (error?.code === "23505") throw new HttpError(409, "That phone number ID is already connected to another tenant");
     if (error) throw error;
 
     if (body.accessToken) {

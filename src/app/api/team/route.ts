@@ -107,7 +107,7 @@ export async function POST(req: Request) {
       const { data: mine } = await db.from("mvno_members").select("mvno_id").eq("user_id", me.id).eq("role", "admin");
       const adminOf = new Set((mine ?? []).map((m) => m.mvno_id));
       if ((theirs ?? []).some((m) => !adminOf.has(m.mvno_id))) {
-        throw new HttpError(403, "This person also works on another MVNO. Ask a super admin to change their password or account.");
+        throw new HttpError(403, "This person also works on another tenant. Ask a super admin to change their password or account.");
       }
     }
 

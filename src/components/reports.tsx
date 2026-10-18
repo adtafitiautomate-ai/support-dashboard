@@ -127,7 +127,7 @@ export function ReportsView() {
       <div className="no-print mb-4 flex flex-wrap items-center gap-2">
         {mvnos.length > 1 && (
           <select value={mvno} onChange={(e) => setMvno(e.target.value)} className="glass h-9 rounded-full px-3 text-sm outline-none">
-            <option value="all">All MVNOs</option>
+            <option value="all">All tenants</option>
             {mvnos.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}

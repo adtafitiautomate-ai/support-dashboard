@@ -26,8 +26,8 @@ const LABEL: Record<string, [string, "neutral" | "green" | "amber" | "red" | "bl
   "user.super_admin_granted": ["Granted super admin", "violet"],
   "user.super_admin_removed": ["Removed super admin", "amber"],
   "user.renamed": ["Renamed user", "neutral"],
-  "mvno.created": ["Created MVNO", "green"],
-  "mvno.updated": ["Updated MVNO", "neutral"],
+  "mvno.created": ["Created tenant", "green"],
+  "mvno.updated": ["Updated tenant", "neutral"],
   "whatsapp.token_renewed": ["Renewed WhatsApp token", "blue"],
   "whatsapp.number_connected": ["Connected WhatsApp number", "blue"],
   "whatsapp.switched_to_simulator": ["Switched to simulator", "amber"],
@@ -95,7 +95,7 @@ export function ActivityLog() {
           <table className="w-full text-[13px]">
             <thead className="sticky top-0 bg-white/90 text-left text-muted backdrop-blur">
               <tr>
-                {["When", "Who", "Action", "Target", "MVNO", "Details"].map((h) => (
+                {["When", "Who", "Action", "Target", "Tenant", "Details"].map((h) => (
                   <th key={h} className="px-4 py-2.5 font-medium whitespace-nowrap">
                     {h}
                   </th>

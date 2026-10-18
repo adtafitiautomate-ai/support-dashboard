@@ -226,16 +226,16 @@ export function EmailSettings() {
           <h3 className="font-semibold">What gets emailed</h3>
           <ul className="mt-2 space-y-2 text-muted">
             <li>
-              <b className="text-ink">Failed transactions</b> → each MVNO&apos;s <i>finance emails</i>, with type, reference and a link to the ticket.
+              <b className="text-ink">Failed transactions</b> → each tenant&apos;s <i>finance emails</i>, with type, reference and a link to the ticket.
             </li>
             <li>
-              <b className="text-ink">Customer waiting, no agent online</b> → the MVNO&apos;s <i>alert emails</i>.
+              <b className="text-ink">Customer waiting, no agent online</b> → the tenant&apos;s <i>alert emails</i>.
             </li>
             <li>
-              <b className="text-ink">Data deletion requests</b> → the MVNO&apos;s <i>alert emails</i>.
+              <b className="text-ink">Data deletion requests</b> → the tenant&apos;s <i>alert emails</i>.
             </li>
           </ul>
-          <p className="mt-3 text-xs text-muted">Set recipients per MVNO in MVNOs → Edit.</p>
+          <p className="mt-3 text-xs text-muted">Set recipients per tenant in Tenants → Edit.</p>
           <p className="mt-3 text-xs text-muted">
             Gmail / Microsoft 365: use an <b>app password</b>, not your normal password. Office 365: smtp.office365.com, port 587, STARTTLS.
           </p>

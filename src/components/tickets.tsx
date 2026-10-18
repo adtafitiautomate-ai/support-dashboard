@@ -125,7 +125,7 @@ export function TicketsView() {
         </select>
         {mvnos.length > 1 && (
           <select value={mvno} onChange={(e) => setMvno(e.target.value)} className={sel}>
-            <option value="all">All MVNOs</option>
+            <option value="all">All tenants</option>
             {mvnos.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
@@ -576,7 +576,7 @@ function EscalateDialog({ ticket, onClose, onDone }: { ticket: Row; onClose: () 
             </div>
           ) : (
             <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-muted">
-              No escalation contacts set for {mvno?.name}. An MVNO admin can add them in Settings → Escalations.
+              No escalation contacts set for {mvno?.name}. A tenant admin can add them in Settings → Escalations.
             </p>
           )}
           {canTypeAddress && (

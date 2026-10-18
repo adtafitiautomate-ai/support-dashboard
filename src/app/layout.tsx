@@ -7,7 +7,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "Tuongee · WhatsApp CX",
-  description: "Shared WhatsApp inbox and customer-care bot for MVNOs",
+  description: "Shared WhatsApp inbox and customer-care bot for every tenant",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

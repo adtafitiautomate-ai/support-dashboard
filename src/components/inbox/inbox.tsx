@@ -82,7 +82,7 @@ export function Inbox() {
         title="Messages"
         subtitle={
           <>
-            <Radio className="size-3.5 text-emerald-500" /> Real-time WhatsApp conversations across {mvnos.length} MVNO{mvnos.length === 1 ? "" : "s"}
+            <Radio className="size-3.5 text-emerald-500" /> Real-time WhatsApp conversations across {mvnos.length} tenant{mvnos.length === 1 ? "" : "s"}
           </>
         }
         actions={
@@ -114,7 +114,7 @@ export function Inbox() {
               onChange={(e) => setMvnoFilter(e.target.value)}
               className="h-9 rounded-full bg-surface px-3 text-sm shadow-sm ring-1 ring-black/5 outline-none dark:ring-white/5"
             >
-              <option value="all">All MVNOs</option>
+              <option value="all">All tenants</option>
               {mvnos.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}

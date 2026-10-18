@@ -84,7 +84,7 @@ export function Insights() {
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {mvnos.length > 1 && (
               <select value={mvno} onChange={(e) => setMvno(e.target.value)} className="h-9 rounded-full bg-surface px-3 text-sm shadow-sm ring-1 ring-black/5 outline-none">
-                <option value="all">All MVNOs</option>
+                <option value="all">All tenants</option>
                 {mvnos.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}

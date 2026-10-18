@@ -196,7 +196,7 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
                 <div className="h-16 animate-pulse rounded-xl bg-surface" />
               ) : !account.connected ? (
                 <p className="text-[13px] text-muted">
-                  Billing isn&apos;t connected for this MVNO yet, so live balances aren&apos;t available. The bot sends customers the USSD codes instead.
+                  Billing isn&apos;t connected for this tenant yet, so live balances aren&apos;t available. The bot sends customers the USSD codes instead.
                 </p>
               ) : (
                 <>

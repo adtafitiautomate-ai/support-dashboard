@@ -120,7 +120,7 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
     case "conversations": {
       const cs = await conversations(r);
       return {
-        columns: ["Ticket", "Created", "MVNO", "Customer", "WhatsApp", "Status", "Priority", "Category", "Subject", "Assigned to", "Handled by", "First response (min)", "Resolution (min)", "SLA breached", "Sentiment", "CSAT"],
+        columns: ["Ticket", "Created", "Tenant", "Customer", "WhatsApp", "Status", "Priority", "Category", "Subject", "Assigned to", "Handled by", "First response (min)", "Resolution (min)", "SLA breached", "Sentiment", "CSAT"],
         rows: cs.map((c) => [
           c.ticket_no ?? "",
           when(c.created_at),
@@ -248,7 +248,7 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
       if (error) throw error;
       type T = { created_at: string; msisdn: string; kind: string; amount: number; method: string; status: string; reference: string; bundle: { name: string } | null; contact: { name: string | null } | null; mvno: { name: string; currency: string } | null };
       return {
-        columns: ["Date", "MVNO", "Customer", "Number topped up", "Type", "Bundle", "Amount", "Currency", "Paid with", "Status", "Reference"],
+        columns: ["Date", "Tenant", "Customer", "Number topped up", "Type", "Bundle", "Amount", "Currency", "Paid with", "Status", "Reference"],
         rows: ((data ?? []) as unknown as T[]).map((x) => [when(x.created_at), x.mvno?.name ?? "", x.contact?.name ?? "", `+${x.msisdn}`, x.kind, x.bundle?.name ?? "", Number(x.amount), x.mvno?.currency ?? "", x.method, x.status, x.reference]),
       };
     }

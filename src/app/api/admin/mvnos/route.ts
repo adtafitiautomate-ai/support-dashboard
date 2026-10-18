@@ -62,7 +62,7 @@ export async function POST(req: Request) {
         })
         .select()
         .single();
-      if (error?.code === "23505") throw new HttpError(409, "An MVNO with that name already exists");
+      if (error?.code === "23505") throw new HttpError(409, "A tenant with that name already exists");
       if (error) throw error;
       await db.from("canned_responses").insert(DEFAULT_REPLIES.map(([shortcut, title, text]) => ({ mvno_id: data.id, shortcut, title, body: text })));
       await audit(me, "mvno.created", { mvnoId: data.id, target: data.name });
