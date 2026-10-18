@@ -2,7 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isSimulatedRun, SIMULATOR_TAG } from "./simulation";
 import { notifyWaitingNoAgent } from "@/lib/notify";
-import { isOpen, nextOpening } from "@/lib/hours";
+import { isOpen } from "@/lib/hours";
 import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/meta";
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
@@ -358,7 +358,6 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
     updated = await updateConversation(conv.id, { followup_reason: afterHours ? "after_hours" : "no_agents" });
     await logEvent(updated, afterHours ? "Arrived after hours: waiting for follow-up" : "No agents online: waiting for follow-up");
     const ref = updated.ticket_no ? ` (ticket #${updated.ticket_no})` : "";
-    const when = afterHours ? nextOpening(mvno.business_hours) : null;
     await sendMessage(
       mvno,
       updated,
@@ -366,7 +365,7 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
       {
         type: "text",
         // Never say the team is offline: just confirm the request is logged and will be followed up.
-        text: `I've logged your request${ref} with everything you've shared. An agent will follow up with you right here${when ? ` ${when}` : " shortly"}. No need to message again. 🙏`,
+        text: `I've logged your request${ref} with everything you've shared. An agent will follow up with you.`,
       },
       { senderType: "bot" },
     );
