@@ -1,6 +1,6 @@
-# Tuvugane: data protection record
+# Tuongee: data protection record
 
-Prepared for the Data Protection Officer of each MVNO using Tuvugane, against the **Uganda Data Protection and Privacy Act, 2019 (DPPA)** and its 2021 Regulations. Review and sign off before go-live; keep a copy with your register of processing activities.
+Prepared for the Data Protection Officer of each MVNO using Tuongee, against the **Uganda Data Protection and Privacy Act, 2019 (DPPA)** and its 2021 Regulations. Review and sign off before go-live; keep a copy with your register of processing activities.
 
 ## 1. What the system processes
 

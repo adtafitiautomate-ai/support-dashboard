@@ -93,7 +93,7 @@ async function fromUrl(raw: string): Promise<Article[]> {
   const res = await fetch(url, {
     redirect: "manual",
     signal: AbortSignal.timeout(15_000),
-    headers: { "User-Agent": "TuvuganeKnowledgeBot/1.0", Accept: "text/html,text/plain,application/pdf" },
+    headers: { "User-Agent": "TuongeeKnowledgeBot/1.0", Accept: "text/html,text/plain,application/pdf" },
   });
   if (res.status >= 300 && res.status < 400) {
     const next = res.headers.get("location");

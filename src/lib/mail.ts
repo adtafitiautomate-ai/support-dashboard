@@ -55,12 +55,12 @@ export function renderEmail(opts: { title: string; intro?: string; rows?: [strin
     .join("");
   const html = `<!doctype html><html><body style="margin:0;background:#f4f5f5;font-family:Segoe UI,Arial,sans-serif">
 <div style="max-width:560px;margin:24px auto;background:#fff;border-radius:16px;padding:28px;border:1px solid #e5e7eb">
-<div style="font-size:12px;color:#6b7280;margin-bottom:8px">Tuvugane</div>
+<div style="font-size:12px;color:#6b7280;margin-bottom:8px">Tuongee</div>
 <h1 style="font-size:20px;margin:0 0 12px;color:#111827">${esc(opts.title)}</h1>
 ${opts.intro ? `<p style="color:#374151;line-height:1.5;margin:0 0 16px">${esc(opts.intro)}</p>` : ""}
 ${rows ? `<table style="font-size:14px;border-collapse:collapse;margin-bottom:16px">${rows}</table>` : ""}
 ${opts.cta ? `<a href="${esc(opts.cta.url)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;font-size:14px">${esc(opts.cta.label)}</a>` : ""}
-<p style="color:#9ca3af;font-size:12px;margin:24px 0 0">${esc(opts.footer ?? "You receive this because your address is set for notifications in Tuvugane.")}</p>
+<p style="color:#9ca3af;font-size:12px;margin:24px 0 0">${esc(opts.footer ?? "You receive this because your address is set for notifications in Tuongee.")}</p>
 </div></body></html>`;
   const text = [opts.title, opts.intro, ...(opts.rows ?? []).map(([k, v]) => `${k}: ${v}`), opts.cta ? `${opts.cta.label}: ${opts.cta.url}` : ""].filter(Boolean).join("\n");
   return { html, text };

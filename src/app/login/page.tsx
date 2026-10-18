@@ -33,7 +33,7 @@ export default function LoginPage() {
           <span className="grid size-9 place-items-center rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
             <Headphones className="size-4.5" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">Tuvugane</span>
+          <span className="text-[15px] font-semibold tracking-tight">Tuongee</span>
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">
@@ -85,7 +85,7 @@ export default function LoginPage() {
           
         </div>
 
-        <p className="text-xs text-zinc-400">Tuvugane · Customer care on WhatsApp</p>
+        <p className="text-xs text-zinc-400">Tuongee · Customer care on WhatsApp</p>
       </section>
 
       {/* Photo */}

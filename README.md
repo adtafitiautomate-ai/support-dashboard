@@ -1,4 +1,4 @@
-# Tuvugane: WhatsApp customer care for MVNOs
+# Tuongee: WhatsApp customer care for MVNOs
 
 A realtime shared inbox and AI + guided-flow chatbot for three MVNOs on WhatsApp.
 
@@ -51,7 +51,7 @@ Project `hpcrwtgmhyxksxxyetbs` (eu-west-1, shared pooler).
    Restart `npm run dev`.
 3. Expose your local server over HTTPS, e.g. `cloudflared tunnel --url http://localhost:3000` (or `ngrok http 3000`).
 4. Meta → **WhatsApp → Configuration → Webhook**: callback URL `https://<tunnel>/api/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`. Click *Verify and save*, then subscribe to the **messages** field.
-5. In Tuvugane, go to **Settings → WhatsApp number**, pick the MVNO (e.g. Nova Mobile), paste the Phone number ID and save. The other MVNOs stay on the simulator.
+5. In Tuongee, go to **Settings → WhatsApp number**, pick the MVNO (e.g. Nova Mobile), paste the Phone number ID and save. The other MVNOs stay on the simulator.
 6. Send "hi" from one of your verified phones to the test number.
 
 To start a conversation from the inbox (**New message**), WhatsApp requires an approved template. Test numbers come with `hello_world` (`en_US`).

@@ -47,7 +47,7 @@ export async function notifyWaitingNoAgent(mvno: M, conv: Pick<Conversation, "id
         ["Customer", `${contact.name ?? "Unknown"} (${formatPhone(contact.wa_id)})`],
         ["Reason", reason],
       ],
-      cta: { label: "Open in Tuvugane", url: ticketUrl(conv) },
+      cta: { label: "Open in Tuongee", url: ticketUrl(conv) },
     }),
   );
 }

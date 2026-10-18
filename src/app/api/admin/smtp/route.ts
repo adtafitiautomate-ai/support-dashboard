@@ -56,10 +56,10 @@ export async function POST(req: Request) {
     forgetSmtp();
     const err = await sendMail(
       [body.to],
-      "Tuvugane test email",
+      "Tuongee test email",
       renderEmail({
         title: "Email notifications are working",
-        intro: `This test was sent by ${profile.full_name} from Tuvugane Admin. Failed-transaction and waiting-customer alerts will arrive like this.`,
+        intro: `This test was sent by ${profile.full_name} from Tuongee Admin. Failed-transaction and waiting-customer alerts will arrive like this.`,
       }),
     );
     await audit(profile, "email.test_sent", { target: body.to, details: { ok: !err, error: err } });

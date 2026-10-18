@@ -39,7 +39,7 @@ export function EmailSettings() {
           username: j.username ?? "",
           password: "",
           from_email: j.from_email ?? "",
-          from_name: j.from_name ?? "Tuvugane",
+          from_name: j.from_name ?? "Tuongee",
           enabled: j.enabled ?? true,
         });
       });
