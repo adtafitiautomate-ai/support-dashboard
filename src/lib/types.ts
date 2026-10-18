@@ -20,6 +20,7 @@ export interface Mvno {
   finance_emails: string[];
   alert_emails: string[];
   number_prefixes: string[];
+  sim_delivery?: boolean; // offers SIM/eSIM home delivery
   escalation_contacts: EscalationContact[];
   wa_phone_number_id: string | null;
   wa_display_number: string | null;

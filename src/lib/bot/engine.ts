@@ -175,7 +175,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
           ? F.executePurchase(ctx, { msisdn: ctx.contact.msisdn ?? ctx.contact.wa_id, amount: Number(b) })
           : F.askOtherNumber(ctx, { amount: Number(b) });
       case "deliver":
-        return F.askLocation(ctx, "delivery", { item: a });
+        return ctx.mvno.sim_delivery ? F.askLocation(ctx, "delivery", { item: a }) : F.showEsim(ctx);
       case "privacy":
         // Deletion requests are handled by a person (identity check, legal holds), then erased from the dashboard.
         await doHandoff(ctx, { reason: "Customer requested deletion of their data (privacy request)", priority: "high", category: "account" });
@@ -337,7 +337,7 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     case "show_promos":
       return F.showPromos(ctx);
     case "track_or_order_delivery":
-      return F.showDeliveries(ctx);
+      return ctx.mvno.sim_delivery ? F.showDeliveries(ctx) : F.showEsim(ctx);
     case "handoff_to_agent":
       return doHandoff(ctx, {
         reason: String(input.reason ?? "Customer needs help"),
@@ -364,7 +364,9 @@ async function menuAction(ctx: F.FlowCtx, action: string) {
     case "failed":
       return F.startFailedTxn(ctx);
     case "delivery":
-      return F.showDeliveries(ctx);
+      return ctx.mvno.sim_delivery ? F.showDeliveries(ctx) : F.showEsim(ctx);
+    case "esim":
+      return F.showEsim(ctx);
     case "line":
       return F.showLineStatus(ctx);
     case "wallet":

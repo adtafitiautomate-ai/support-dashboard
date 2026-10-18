@@ -48,7 +48,9 @@ export async function showMenu(ctx: FlowCtx, intro?: string) {
         rows: [
           { id: "menu:wallet", title: ctx.mvno.wallet_name.slice(0, 24), description: "Mobile money: fees, limits, help" },
           { id: "menu:outlets", title: "Find a shop or agent", description: "Nearest service centre or agent" },
-          { id: "menu:delivery", title: "SIM, eSIM & deliveries", description: "Order a SIM, get an eSIM, track" },
+          ctx.mvno.sim_delivery
+            ? { id: "menu:delivery", title: "SIM, eSIM & deliveries", description: "Order a SIM, get an eSIM, track" }
+            : { id: "menu:esim", title: "Get an eSIM", description: "Where and how to get an eSIM" },
           { id: "menu:simloss", title: "Lost / replace SIM", description: "Stolen, lost or damaged SIM" },
         ],
       },
@@ -383,7 +385,11 @@ export async function confirmBundle(ctx: FlowCtx, bundleId: string) {
   if (!hasRealBilling(ctx.mvno.slug)) {
     // No live billing: inform, never sell. Buying steps come from the tenant's own knowledge base.
     const head = `${bundleSummary(b)}\n*Price: ${formatMoney(b.price, ctx.mvno.currency)}*\n\n`;
-    const steps = await buyingSteps(ctx.mvno.id, 1024 - head.length - 20);
+    // Always offer the tenant's own wallet too (e.g. PaxSente *185#), if the article doesn't already.
+    const w = ctx.mvno.wallet_ussd;
+    const walletLine = w ? `\n\nOr pay straight from your *${ctx.mvno.wallet_name}* wallet: dial *${w}*.` : "";
+    const kbSteps = await buyingSteps(ctx.mvno.id, 1024 - head.length - walletLine.length - 20);
+    const steps = kbSteps && (w && !kbSteps.includes(w) ? kbSteps + walletLine : kbSteps);
     const code = b.ussd ?? ctx.mvno.ussd_codes?.self_service;
     await setState(ctx, {});
     await say(ctx, {
@@ -677,22 +683,34 @@ export async function showDeliveries(ctx: FlowCtx) {
   });
 }
 
-/** eSIMs are activated in person (biometrics + National ID), so guide the customer there. */
+/**
+ * eSIMs are issued in person (biometrics + National ID), only at service centres whose
+ * services include "esim" (e.g. PaxTel: Wandegeya only).
+ */
 export async function showEsim(ctx: FlowCtx) {
+  await setState(ctx, {});
+  const { data } = await supabaseAdmin().from("outlets").select("*").eq("mvno_id", ctx.mvno.id).eq("kind", "store").contains("services", ["esim"]);
+  const centres = (data ?? []) as Outlet[];
+  const where =
+    centres.length === 1
+      ? `Visit our *${centres[0].name}*${centres[0].address && centres[0].address !== centres[0].name ? ` (${centres[0].address})` : ""} with your *original National ID*. eSIMs are only issued there${centres[0].hours ? `; open ${centres[0].hours}` : ""}.`
+      : centres.length > 1
+        ? `Visit one of these service centres with your *original National ID*: ${centres.map((c) => c.name).join(", ")}.`
+        : `Visit one of our service centres with your *original National ID*.`;
   await say(ctx, {
     type: "buttons",
     body:
       `*Getting an eSIM* 📱\n\n` +
       `1. Dial *#06#: if you see an *EID* number, your phone supports eSIM.\n` +
-      `2. Visit a service centre with your *original National ID*.\n` +
+      `2. ${where}\n` +
       `3. We capture your biometrics and photo.\n` +
       `4. You get a QR code: scan it to activate.\n\n` +
       `Works on iPhone XS+, Samsung S20+, Pixel 3+, iPad Pro 2018+, Apple Watch 3+.`,
-    buttons: [
-      { id: "near:store", title: "Nearest centre" },
-      { id: "menu:main", title: "Main menu" },
-    ],
+    buttons: [{ id: "menu:main", title: "Main menu" }],
   });
+  // One eSIM centre with GPS: also send its pin so the customer can navigate there.
+  const c = centres.length === 1 ? centres[0] : null;
+  if (c && c.lat !== null && c.lng !== null) await say(ctx, { type: "location", lat: c.lat, lng: c.lng, name: c.name, address: c.address });
 }
 
 export async function createDelivery(

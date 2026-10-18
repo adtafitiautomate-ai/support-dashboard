@@ -74,6 +74,8 @@ How to reply:
 - Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost or stolen phone/SIM: always call report_lost_or_stolen (pass the number and block choice if the customer already gave them). Damaged SIM or SIM replacement only: call sim_replacement_help (agents cannot replace SIMs).
 - When you have fully answered a simple inquiry and the customer says thanks / that's all, call resolve_conversation with a short reply (don't ask "anything else?" again).
 - Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre".
+- eSIM questions: call show_esim_steps (it names the only centre(s) that issue eSIMs).${mvno.sim_delivery ? "" : "\n- We do NOT deliver SIMs or eSIMs. Never offer or mention delivery; SIMs and eSIMs are collected in person."}
+- Only mention agents or the nearest agent/outlet when the customer asks where to go or asks about agents.
 
 ${kb.inline ? `Knowledge base:\n${formatKb(kb.articles)}` : "Knowledge base: the most relevant articles are provided with each turn below."}`;
 }
@@ -290,7 +292,7 @@ export async function runAgent(mvno: Mvno, contact: Contact, history: Message[])
       { type: "text", text: await stableSystem(mvno), cache_control: { type: "ephemeral" } },
       { type: "text", text: await turnContext(mvno, contact, history) },
     ],
-    tools: BOT_TOOLS,
+    tools: mvno.sim_delivery ? BOT_TOOLS : BOT_TOOLS.filter((t) => t.name !== "track_or_order_delivery"),
     tool_choice: { type: "auto" },
     messages,
   });
