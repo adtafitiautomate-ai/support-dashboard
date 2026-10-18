@@ -316,7 +316,7 @@ function CannedSettings({ mvno }: { mvno: Mvno }) {
   );
 }
 
-const EMAIL = /^[^s@]+@[^s@]+.[^s@]+$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Who tickets can be escalated to by email (Finance, Network, Billing...). */
 function EscalationSettings({ mvno }: { mvno: Mvno }) {
@@ -334,7 +334,7 @@ function EscalationSettings({ mvno }: { mvno: Mvno }) {
         void saver.run(async () => {
           const contacts: EscalationContact[] = [];
           for (const r of rows) {
-            const emails = r.emails.split(/[,;s]+/).map((s) => s.trim()).filter(Boolean);
+            const emails = r.emails.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
             if (!r.name.trim() && !emails.length) continue;
             if (!r.name.trim()) return { error: { message: "Each contact needs a name, e.g. Finance" } };
             const bad = emails.find((x) => !EMAIL.test(x));

@@ -402,8 +402,8 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
       wallet_ussd: rest.wallet_ussd || null,
       care_line: rest.care_line || null,
       privacy_notice: rest.privacy_notice || null,
-      finance_emails: rest.finance_emails.split(/[,;s]+/).map((s) => s.trim()).filter(Boolean),
-      alert_emails: rest.alert_emails.split(/[,;s]+/).map((s) => s.trim()).filter(Boolean),
+      finance_emails: rest.finance_emails.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean),
+      alert_emails: rest.alert_emails.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean),
       greeting: rest.greeting || undefined,
       ussd_codes: Object.fromEntries(Object.entries({ balance, self_service, promos }).filter(([, v]) => v)),
     };
