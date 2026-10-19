@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, MessageCircle, Radio, Settings, Smartphone } from "lucide-react";
+import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
 import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -142,11 +142,9 @@ const NAV = [
 function TopBar() {
   return (
     <header className="relative z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-3 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3">
-      <Link href="/inbox" className="flex items-center gap-2">
-        <span className="grid size-9 place-items-center rounded-xl bg-surface text-ink ring-1 ring-black/10 shadow-sm">
-          <MessageCircle className="size-5" />
-        </span>
-        <span className="hidden text-lg font-semibold tracking-tight sm:block">Tuongee</span>
+      <Link href="/inbox" className="flex items-center rounded-xl bg-white/80 px-2 py-1 shadow-sm ring-1 ring-black/5" aria-label="Tuongee home">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="Tuongee" width={640} height={505} className="h-9 w-auto sm:h-10" />
       </Link>
       <div className="order-last flex w-full justify-center md:order-none md:w-auto md:flex-1">
         <PillNav />

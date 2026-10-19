@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Headphones, Loader2, Lock, Mail } from "lucide-react";
+import { ArrowRight, Loader2, Lock, Mail } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { toLoginEmail } from "@/lib/login";
 
@@ -29,11 +29,9 @@ export default function LoginPage() {
     <main className="grid min-h-full bg-white lg:grid-cols-[minmax(420px,1fr)_1.2fr] dark:bg-surface">
       {/* Form */}
       <section className="flex flex-col px-6 py-8 sm:px-12">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-9 place-items-center rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-            <Headphones className="size-4.5" />
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight">Tuongee</span>
+        <div className="flex items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Tuongee" width={640} height={505} className="h-14 w-auto" />
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">
