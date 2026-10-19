@@ -6,6 +6,7 @@ import { isOpen } from "@/lib/hours";
 import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/meta";
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
+import { closingOf } from "@/lib/format";
 
 // ------------------------------------------------------------------ tenant lookup (hot path, cached)
 
@@ -482,7 +483,7 @@ export async function resolveConversation(
       contact,
       {
         type: "buttons",
-        body: `Thanks for chatting with ${mvno.name}! How did we do today?`,
+        body: `${closingOf(mvno)}\n\nHow did we do today?`,
         buttons: [
           { id: "csat:5", title: "😀 Great" },
           { id: "csat:3", title: "😐 Okay" },

@@ -63,3 +63,33 @@ export async function storeInboundMedia(message: MediaMessage): Promise<string |
     .eq("id", message.id);
   return path;
 }
+
+export type AiAttachment = { kind: "image" | "document"; mediaType: string; data: string };
+
+/**
+ * A stored photo or PDF, ready to show the AI (base64). Photos are downscaled to keep
+ * them fast and cheap to read. Null if it can't be used.
+ */
+export async function mediaForAi(path: string, mime: string): Promise<AiAttachment | null> {
+  try {
+    const { data } = await supabaseAdmin().storage.from(MEDIA_BUCKET).download(path);
+    if (!data) return null;
+    const bytes = Buffer.from(await data.arrayBuffer());
+    if (mime === "application/pdf") {
+      return bytes.length <= 10 * 1024 * 1024 ? { kind: "document", mediaType: "application/pdf", data: bytes.toString("base64") } : null;
+    }
+    if (!mime.startsWith("image/")) return null;
+    try {
+      const sharp = (await import("sharp")).default;
+      const out = await sharp(bytes).rotate().resize({ width: 1568, height: 1568, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+      return { kind: "image", mediaType: "image/jpeg", data: out.toString("base64") };
+    } catch {
+      // No image library: send the original if the AI accepts it as-is.
+      const ok = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mime) && bytes.length <= 4.5 * 1024 * 1024;
+      return ok ? { kind: "image", mediaType: mime, data: bytes.toString("base64") } : null;
+    }
+  } catch (e) {
+    console.error("media for ai", e);
+    return null;
+  }
+}

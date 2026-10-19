@@ -46,6 +46,8 @@ export interface InboundMessage {
   rawType?: string;
   /** The original Meta message, kept for anything unusual so it can be diagnosed later. */
   raw?: Record<string, unknown>;
+  /** Storage path once the media is saved (set before the bot reads a photo/PDF). */
+  mediaPath?: string;
   /** Not meant for the bot (e.g. a reaction): store it, don't reply. */
   silent?: boolean;
 }

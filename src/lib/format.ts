@@ -37,6 +37,10 @@ export function formatMinutes(mins: number | null | undefined) {
   return `${Math.floor(m / 1440)}d${h ? ` ${h}h` : ""}`;
 }
 
+export const DEFAULT_CLOSING = "Thank you for contacting us. Have a blessed day!";
+/** The tenant's goodbye (works at any time of day). */
+export const closingOf = (m: { closing_message?: string | null }) => m.closing_message?.trim() || DEFAULT_CLOSING;
+
 export function initials(name: string | null | undefined) {
   return (name ?? "?")
     .split(/\s+/)

@@ -21,6 +21,8 @@ import * as F from "./flows";
 import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { allow, LIMITS } from "@/lib/security";
 import { runAgent, triage } from "./ai";
+import { closingOf } from "@/lib/format";
+import { mediaForAi } from "@/lib/whatsapp/media";
 
 /** Entry point for every inbound WhatsApp message, from Meta or the simulator. */
 export async function processInbound(mvno: Mvno, msg: InboundMessage) {
@@ -68,7 +70,7 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
         { mvno, conv, contact },
         {
           type: "text",
-          text: score >= 4 ? "Thank you! 💜 Have a great day." : "Thanks for telling us. We'll use this to do better. 🙏",
+          text: score >= 4 ? "Thank you for your feedback! 💜" : "Thanks for telling us. We'll use this to do better. 🙏",
         },
       );
       return;
@@ -90,7 +92,10 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
   }
 
   // Save photos / voice notes / documents in parallel with the reply, so media never slows the bot.
-  const mediaJob = msg.mediaId ? storeInboundMedia(stored).catch((e) => console.error("media", e)) : null;
+  const mediaJob = msg.mediaId ? storeInboundMedia(stored).catch((e) => (console.error("media", e), null)) : null;
+  // The bot reads photos and PDFs (e.g. a transaction screenshot): wait for the file first.
+  const readable = msg.type === "image" || (msg.type === "document" && msg.mime === "application/pdf");
+  if (readable && mediaJob && conv.status === "bot") msg.mediaPath = (await mediaJob) ?? undefined;
   try {
     const ctx: F.FlowCtx = { mvno, conv, contact };
     // Typed keyword only (never a button tap); "data" alone means data bundles, not privacy.
@@ -275,10 +280,11 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
     });
   }
 
-  if (!text) {
+  const attachment = msg.mediaPath ? await mediaForAi(msg.mediaPath, msg.mime ?? (msg.type === "image" ? "image/jpeg" : "application/pdf")) : null;
+  if (!text && !attachment) {
     return F.say(ctx, {
       type: "buttons",
-      body: "Thanks! I can't open attachments, but our team can.",
+      body: "Thanks! I can't open voice notes or videos, but our team can.",
       buttons: [
         { id: "menu:human", title: "Talk to an agent" },
         { id: "menu:main", title: "Main menu" },
@@ -288,7 +294,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
 
   // Cap AI replies per customer so one chat can't run up model costs; menus still work past the cap.
   if (!(await allow(`ai:bot:${ctx.mvno.id}:${ctx.contact.wa_id}`, LIMITS.botAiPerCustomer))) return keywordFallback(ctx, text);
-  const turn = await runAgent(ctx.mvno, ctx.contact, history).catch((e) => {
+  const turn = await runAgent(ctx.mvno, ctx.contact, history, attachment ? [attachment] : []).catch((e) => {
     console.error("claude error", e);
     return null;
   });
@@ -481,7 +487,7 @@ async function botResolve(ctx: F.FlowCtx, summary: string, category: string) {
   // resolveConversation decides whether a survey is due (once every N days per customer).
   // Keep ctx in sync so later writes in this turn don't overwrite the resolved state.
   ctx.conv = await resolveConversation(ctx.mvno, ctx.conv, ctx.contact, null, true, "Resolved by bot (inquiry answered)");
-  if (ctx.conv.bot_state?.awaiting !== "csat") await F.say(ctx, { type: "text", text: `Thanks for chatting with ${ctx.mvno.name}! Have a great day 💜` });
+  if (ctx.conv.bot_state?.awaiting !== "csat") await F.say(ctx, { type: "text", text: closingOf(ctx.mvno) });
 }
 
 const isEscape = (t: string) => /^(menu|main menu|0|start|cancel|back)$/i.test(t);

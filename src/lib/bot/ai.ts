@@ -6,6 +6,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Contact, KbArticle, Message, Mvno } from "@/lib/types";
 import { recordAiUsage, type AiKind } from "@/lib/ai-usage";
 import { hasRealBilling } from "@/lib/mvno/api";
+import { closingOf } from "@/lib/format";
+import type { AiAttachment } from "@/lib/whatsapp/media";
 
 const MODEL = process.env.BOT_MODEL || "claude-opus-5-5";
 
@@ -78,7 +80,10 @@ ${
       : ""
   }
 - Failed, stuck or deducted transactions of ANY kind (${mvno.wallet_name}: send money, receive money, bill payments, withdrawals, deposits; or airtime/bundles): always call report_failed_transaction. That raises a ticket for finance. Never promise a refund or reversal. Lost or stolen phone/SIM: always call report_lost_or_stolen (pass the number and block choice if the customer already gave them). Damaged SIM or SIM replacement only: call sim_replacement_help (agents cannot replace SIMs).
-- When you have fully answered a simple inquiry and the customer says thanks / that's all, call resolve_conversation with a short reply (don't ask "anything else?" again).
+- Ending a chat: only when the customer says they're done (thanks, that's all, bye, webale, asante) or declines "anything else?", call resolve_conversation and write NO goodbye yourself: the system sends the closing message ("${closingOf(mvno)}"), together with the rating question when one is due. Never add a closing or "have a nice day" to ordinary replies.
+- Never use time-of-day greetings in a goodbye (no "good morning/afternoon/evening/night").
+- Don't close while the customer is still waiting on us: after a failed transaction, a lost/stolen line request, a complaint handed to the team or anything escalated, end with the next step instead (e.g. "I've passed your details to our team. We'll update you here.").
+- Customers may send photos or screenshots (often an SMS or mobile money confirmation) or PDFs; they are attached to their message. Read them and act: e.g. a failed or disputed transaction → report_failed_transaction with the transaction ID, amount and type you can see. If it's unclear what they want, say briefly what you see and ask what's wrong. Don't repeat full ID or account numbers back unless needed.
 - Asking where an agent is: call find_nearest_outlets with purpose "agent". Asking for a service centre: purpose "service_centre". Pass the customer's town/area if they mentioned it anywhere in the chat; never guess it.
 - eSIM questions: call show_esim_steps (it lists the service centres that issue eSIMs; never say a centre can't issue them unless the knowledge base says so).${mvno.sim_delivery ? "" : "\n- We do NOT deliver SIMs or eSIMs. Never offer or mention delivery; SIMs and eSIMs are collected in person."}
 - Only mention agents or the nearest agent/outlet when the customer asks where to go or asks about agents.
@@ -286,11 +291,24 @@ export interface AgentTurn {
  * One fast Claude call per customer message. Tools here are "actions" that send
  * WhatsApp UI themselves, so we execute them and stop: no second round-trip.
  */
-export async function runAgent(mvno: Mvno, contact: Contact, history: Message[]): Promise<AgentTurn | null> {
+export async function runAgent(mvno: Mvno, contact: Contact, history: Message[], attachments: AiAttachment[] = []): Promise<AgentTurn | null> {
   const c = claude();
   if (!c) return null;
   const messages = toTurns(history);
   if (!messages.length || messages[messages.length - 1].role !== "user") return null;
+  if (attachments.length) {
+    // Show the customer's photo/PDF with their latest message.
+    const last = messages[messages.length - 1];
+    const text = typeof last.content === "string" ? last.content : "";
+    last.content = [
+      ...attachments.map((a) =>
+        a.kind === "image"
+          ? ({ type: "image", source: { type: "base64", media_type: a.mediaType, data: a.data } } as Anthropic.Beta.BetaImageBlockParam)
+          : ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } } as Anthropic.Beta.BetaRequestDocumentBlock),
+      ),
+      { type: "text", text: /^\[(image|document)\]$/.test(text.trim()) ? "(The customer sent this with no message.)" : text },
+    ];
+  }
 
   const response = await c.beta.messages.create({
     model: MODEL,

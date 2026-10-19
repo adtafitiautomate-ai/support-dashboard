@@ -99,6 +99,7 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
   const [form, setForm] = useState({
     bot_name: mvno.bot_name,
     greeting: mvno.greeting,
+    closing_message: mvno.closing_message ?? "Thank you for contacting us. Have a blessed day!",
     bot_persona: mvno.bot_persona,
     sla_first_response_mins: mvno.sla_first_response_mins,
     csat_every_days: mvno.csat_every_days ?? 14,
@@ -131,6 +132,9 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
       </div>
       <Field label="Greeting" hint="First thing new customers see, above the main menu.">
         <input className={input} value={form.greeting} onChange={(e) => setForm({ ...form, greeting: e.target.value })} />
+      </Field>
+      <Field label="Closing message" hint="Sent when a chat ends (with the rating question when one is due). Avoid time-of-day greetings so it works at any hour.">
+        <input className={input} maxLength={300} value={form.closing_message} onChange={(e) => setForm({ ...form, closing_message: e.target.value })} />
       </Field>
       <Field label="Personality & tone" hint="Guides how the AI writes. Describe the brand voice, audience and languages.">
         <textarea rows={3} className={input} value={form.bot_persona} onChange={(e) => setForm({ ...form, bot_persona: e.target.value })} />
