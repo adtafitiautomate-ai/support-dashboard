@@ -142,7 +142,7 @@ const NAV = [
 function TopBar() {
   return (
     <header className="relative z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-3 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3">
-      <Link href="/inbox" className="flex items-center rounded-xl bg-white/80 px-2 py-1 shadow-sm ring-1 ring-black/5" aria-label="Tuongee home">
+      <Link href="/inbox" className="flex items-center" aria-label="Tuongee home">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="Tuongee" width={640} height={505} className="h-9 w-auto sm:h-10" />
       </Link>
