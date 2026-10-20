@@ -386,6 +386,18 @@ function TicketDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
               {t.escalated_at && (
                 <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
                   <Megaphone className="size-3.5 shrink-0" /> Escalated to <b className="font-semibold">{t.escalated_to}</b> {relTime(t.escalated_at, now)} ago
+                  {t.vtiger_ticket_id && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const j = (await (await fetch(`/api/conversations/${t.id}/vtiger`)).json()) as VtigerInfo;
+                        if (j.existing?.url) window.open(j.existing.url, "_blank", "noopener");
+                      }}
+                      className="ml-auto shrink-0 font-semibold underline"
+                    >
+                      Open in vtiger
+                    </button>
+                  )}
                 </p>
               )}
               {error && <p className="mt-2 text-xs text-danger">{error}</p>}
@@ -514,6 +526,14 @@ function EscalateDialog({ ticket, onClose, onDone }: { ticket: Row; onClose: () 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ready = (picked.length > 0 || extra.trim().length > 0) && note.trim().length >= 3;
+  const [mode, setMode] = useState<"email" | "vtiger">("email");
+  const [vt, setVt] = useState<VtigerInfo | null>(null);
+  useEffect(() => {
+    void fetch(`/api/conversations/${ticket.id}/vtiger`)
+      .then((r) => r.json())
+      .then((j: VtigerInfo) => setVt(j))
+      .catch(() => setVt({ enabled: false }));
+  }, [ticket.id]);
 
   async function send() {
     setBusy(true);
@@ -538,9 +558,9 @@ function EscalateDialog({ ticket, onClose, onDone }: { ticket: Row; onClose: () 
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          if (ready && !busy) void send();
+          if (mode === "email" && ready && !busy) void send();
         }}
-        className="w-full max-w-md space-y-4 rounded-3xl bg-white p-5 shadow-2xl ring-1 ring-black/10"
+        className="max-h-full w-full max-w-md space-y-4 overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl ring-1 ring-black/10"
       >
         <div className="flex items-start gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
@@ -548,13 +568,34 @@ function EscalateDialog({ ticket, onClose, onDone }: { ticket: Row; onClose: () 
           </span>
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold">Escalate {ticket.ticket_no ? `ticket #${ticket.ticket_no}` : "this chat"}</h3>
-            <p className="text-xs text-muted">Emails the ticket details to the team that needs to act. The customer is not notified.</p>
+            <p className="text-xs text-muted">
+              {mode === "email" ? "Emails the ticket details to the team that needs to act." : "Creates a ticket in vtiger with the details filled in."} The customer is not notified.
+            </p>
           </div>
           <button type="button" onClick={onClose} className="grid size-8 place-items-center rounded-full text-muted hover:bg-zinc-100" aria-label="Close">
             <X className="size-4" />
           </button>
         </div>
 
+        {vt?.enabled && (
+          <div className="grid grid-cols-2 rounded-2xl bg-zinc-100 p-1 text-[13px] font-medium">
+            {(
+              [
+                ["email", "Email a team"],
+                ["vtiger", "vtiger ticket"],
+              ] as const
+            ).map(([m, label]) => (
+              <button key={m} type="button" onClick={() => setMode(m)} className={cx("rounded-xl py-1.5 transition", mode === m ? "bg-white shadow-sm" : "text-muted hover:text-ink")}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === "vtiger" && vt?.enabled ? (
+          <VtigerForm ticketId={ticket.id} info={vt} onClose={onClose} onDone={onDone} />
+        ) : (
+        <>
         <div>
           <div className="mb-1.5 text-xs font-medium text-muted">Send to</div>
           {contacts.length ? (
@@ -620,7 +661,200 @@ function EscalateDialog({ ticket, onClose, onDone }: { ticket: Row; onClose: () 
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Send escalation
           </button>
         </div>
+        </>
+        )}
       </form>
+    </div>
+  );
+}
+
+type VtigerOption = { id: string; name: string };
+type VtigerInfo = {
+  enabled: boolean;
+  existing?: { no: string | null; url: string | null };
+  options?: { organizations: VtigerOption[]; groups: VtigerOption[]; people: VtigerOption[]; priorities: string[]; severities: string[]; categories: string[] };
+  defaults?: { title: string; organizationId: string; priority: string; severity: string; category: string };
+};
+
+/** "vtiger ticket" tab: creates ONE real HelpDesk ticket in vtiger (production) after a confirm step. */
+function VtigerForm({ ticketId, info, onClose, onDone }: { ticketId: string; info: VtigerInfo; onClose: () => void; onDone: (c: Conversation) => void }) {
+  const d = info.defaults;
+  const o = info.options;
+  const [f, setF] = useState({
+    title: d?.title ?? "",
+    organizationId: d?.organizationId ?? "",
+    assignedTo: "",
+    priority: d?.priority ?? "Normal",
+    severity: d?.severity ?? "",
+    category: d?.category ?? "",
+    note: "",
+  });
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ no: string; url: string | null } | null>(null);
+  const sel = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30";
+  const missing = !f.title.trim() ? "Add a title" : !f.organizationId ? "Choose the organization" : !f.assignedTo ? "Choose who it goes to" : f.note.trim().length < 3 ? "Add a note" : null;
+
+  if (info.existing) {
+    return (
+      <div className="space-y-3 rounded-2xl bg-zinc-50 p-4 text-sm ring-1 ring-black/5">
+        <p>
+          This chat is already in vtiger as <b>{info.existing.no}</b>. Add updates there, or as an internal note here.
+        </p>
+        {info.existing.url && (
+          <a href={info.existing.url} target="_blank" rel="noopener noreferrer" className="inline-flex rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white">
+            Open {info.existing.no} in vtiger
+          </a>
+        )}
+      </div>
+    );
+  }
+  if (created) {
+    return (
+      <div className="space-y-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900 ring-1 ring-emerald-200">
+        <p>
+          Created <b>{created.no}</b> in vtiger.
+        </p>
+        <div className="flex gap-2">
+          {created.url && (
+            <a href={created.url} target="_blank" rel="noopener noreferrer" className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white">
+              Open in vtiger
+            </a>
+          )}
+          <button type="button" onClick={onClose} className="rounded-full px-3 py-2 text-xs font-medium hover:bg-emerald-100">
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!o) return <Loader2 className="size-4 animate-spin text-muted" />;
+
+  async function create() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api<{ conversation: Conversation; ticket: { no: string; url: string | null } }>(`/api/conversations/${ticketId}/vtiger`, {
+        ...f,
+        severity: f.severity || undefined,
+        category: f.category || undefined,
+      });
+      setCreated(r.ticket);
+      onDone(r.conversation);
+    } catch (e) {
+      setError((e as Error).message);
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-muted">Title</span>
+        <input className={sel} value={f.title} maxLength={250} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="e.g. Bought data but didn't receive" />
+      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted">Organization</span>
+          <select className={sel} value={f.organizationId} onChange={(e) => setF({ ...f, organizationId: e.target.value })}>
+            <option value="">Choose…</option>
+            {o.organizations.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted">Assign to</span>
+          <select className={sel} value={f.assignedTo} onChange={(e) => setF({ ...f, assignedTo: e.target.value })}>
+            <option value="">Choose…</option>
+            {o.people.length > 0 && (
+              <optgroup label="People">
+                {o.people.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="Groups">
+              {o.groups.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted">Category</span>
+          <select className={sel} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
+            <option value="">None</option>
+            {o.categories.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted">Priority</span>
+            <select className={sel} value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>
+              {o.priorities.map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted">Severity</span>
+            <select className={sel} value={f.severity} onChange={(e) => setF({ ...f, severity: e.target.value })}>
+              <option value="">None</option>
+              {o.severities.map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-muted">Note for the team</span>
+        <textarea
+          rows={3}
+          className={sel}
+          maxLength={2000}
+          value={f.note}
+          onChange={(e) => setF({ ...f, note: e.target.value })}
+          placeholder="What's wrong and what you need, e.g. Customer 0724… bought 10GB (UGX 12,000) yesterday, not received. Please check and credit."
+        />
+      </label>
+      <p className="text-[11.5px] text-muted">The customer, their number, the summary, recent messages and a link back to this chat are added automatically.</p>
+      {error && <p className="text-sm text-danger">{error}</p>}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {confirming ? (
+          <>
+            <span className="mr-auto text-sm text-amber-800">This creates a real ticket in vtiger. Continue?</span>
+            <button type="button" onClick={() => setConfirming(false)} className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-zinc-100">
+              Back
+            </button>
+            <button type="button" disabled={busy} onClick={create} className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+              {busy && <Loader2 className="size-4 animate-spin" />} Yes, create it
+            </button>
+          </>
+        ) : (
+          <>
+            {missing && <span className="mr-auto text-xs text-muted">{missing}</span>}
+            <button type="button" onClick={onClose} className="rounded-full px-4 py-2 text-sm font-medium text-muted hover:bg-zinc-100">
+              Cancel
+            </button>
+            <button type="button" disabled={!!missing} onClick={() => setConfirming(true)} className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">
+              Create vtiger ticket
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

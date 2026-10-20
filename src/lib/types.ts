@@ -89,6 +89,8 @@ export interface Conversation {
   id: string;
   followup_reason?: "after_hours" | "no_agents" | null;
   escalated_at?: string | null;
+  vtiger_ticket_id?: string | null;
+  vtiger_ticket_no?: string | null;
   escalated_to?: string | null;
   ticket_no: number | null; // set only once a person is involved (handoff or assignment)
   mvno_id: string;
