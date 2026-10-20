@@ -86,6 +86,23 @@ export async function upsertContact(mvno: Mvno, waId: string, profileName?: stri
 
 const REOPEN_WITHIN_MS = 24 * 3_600_000;
 
+/** The chat that closed most recently (within `withinMs`), if the customer has no open chat now. */
+export async function recentlyClosed(contact: Contact, withinMs: number): Promise<Conversation | null> {
+  const db = supabaseAdmin();
+  const { data: open } = await db.from("conversations").select("id").eq("contact_id", contact.id).neq("status", "resolved").maybeSingle();
+  if (open) return null;
+  const { data } = await db
+    .from("conversations")
+    .select("*")
+    .eq("contact_id", contact.id)
+    .eq("status", "resolved")
+    .gte("resolved_at", new Date(Date.now() - withinMs).toISOString())
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data;
+}
+
 /**
  * The customer's previous chat (last 7 days), so the bot doesn't re-ask what they already
  * told us (town, number, the issue). Customer-visible messages only.

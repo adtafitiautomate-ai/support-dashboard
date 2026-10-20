@@ -10,6 +10,7 @@ import {
   logEvent,
   markReadAndTyping,
   previousChat,
+  recentlyClosed,
   recentMessages,
   recordInbound,
   resolveConversation,
@@ -73,6 +74,16 @@ export async function processInbound(mvno: Mvno, msg: InboundMessage) {
           text: score >= 4 ? "Thank you for your feedback! 💜" : "Thanks for telling us. We'll use this to do better. 🙏",
         },
       );
+      return;
+    }
+  }
+
+  // "My pleasure 🙏", "thanks", "ok 👍" just after a chat closed: file it in that chat quietly.
+  // It must not reopen the ticket, start a new bot chat, or get a reply.
+  if (!msg.replyId && msg.type === "text" && isCourtesy(msg.text ?? "")) {
+    const closed = await recentlyClosed(contact, 6 * 3_600_000);
+    if (closed) {
+      if (await recordInbound(closed, msg)) await updateConversation(closed.id, { unread_count: 0 });
       return;
     }
   }
@@ -260,13 +271,13 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   if (isEscape(text)) return F.showMenu(ctx);
 
   let history = await recentMessages(ctx.conv.id, 20);
-  const isFirst = history.filter((m) => m.direction === "out" && !m.is_internal).length === 0;
   // New chat: also show the AI the customer's previous chat, so it continues the story
   // instead of re-asking their town, number or issue.
   if (history.length < 6) history = [...(await previousChat(ctx.contact.id, ctx.conv.id)), ...history];
   // A plain greeting ("Hi", "Asalam alaikum") always gets the MVNO's configured greeting + menu,
   // never an improvised AI reply. Greetings with a question attached still go to the AI.
-  if (isGreeting(text) && (isFirst || isJustGreeting(text))) return F.showMenu(ctx, greetingReply(ctx.mvno.greeting, text));
+  // Only when the message is JUST a greeting: "Hello PaxTel, I'd like to enquire about APN…" goes to the AI.
+  if (isGreeting(text) && isJustGreeting(text)) return F.showMenu(ctx, greetingReply(ctx.mvno.greeting, text));
 
   // View-once media, polls, events, edits...: WhatsApp doesn't pass these to businesses.
   if (msg.type === "unknown" && msg.rawType !== "contacts") {
@@ -498,6 +509,19 @@ const SALAM = /^(a?s+[-\s']?)?s?a?l+a+m(u|o)?\b/i;
 const isGreeting = (t: string) =>
   SALAM.test(t) ||
   /^(hi+|hey|hello|hallo|good (morning|afternoon|evening)|oli otya|gyebale|ki kati|wasuze otya|agandi|oraire ota|habari|mambo|jambo)\b/i.test(t);
+
+/** Only thanks / a pleasantry / emoji, with no question or request ("my pleasure 🙏", "ok 👍", "webale"). */
+const COURTESY =
+  /^(thanks?( (a lot|so much|very much|you( (so|very) much)?))?|thank you( (so|very) much)?|thanx|thnx|thx|tnx|ok+|okay|okey|alright|all right|sure|cool|great|nice|perfect|noted|received|my pleasure|pleasure|(you are|you're|youre) welcome|welcome|bye|goodbye|good ?night|have a (nice|good|blessed) (day|night|evening)|same to you|you too|god bless( you)?|amen|webale( nnyo| nyo)?|mwebale( nnyo)?|asante( sana)?|sawa|nice day)$/;
+const isCourtesy = (t: string) => {
+  const s = t
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}' ]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (t.trim().length > 60) return false;
+  return s === "" ? t.trim().length > 0 : COURTESY.test(s); // "" = emoji/punctuation only
+};
 
 /** The whole message is just a greeting (no question or request attached). */
 const isJustGreeting = (t: string) =>
