@@ -17,6 +17,9 @@ export const vtigerRecordUrl = (id: string) => {
 };
 
 let session: { name: string; at: number } | null = null;
+// vtiger keeps ONE login challenge per user: parallel logins overwrite each other's token
+// and fail ("Invalid username or password"). Concurrent callers share one login.
+let loggingIn: Promise<string> | null = null;
 
 async function call<T>(params: Record<string, string>, post = false): Promise<T> {
   const c = cfg();
@@ -35,14 +38,22 @@ async function call<T>(params: Record<string, string>, post = false): Promise<T>
 
 async function sessionName(fresh = false) {
   if (!fresh && session && Date.now() - session.at < 10 * 60_000) return session.name;
-  const c = cfg()!;
-  const ch = await call<{ token: string }>({ operation: "getchallenge", username: c.user });
-  const login = await call<{ sessionName: string }>(
-    { operation: "login", username: c.user, accessKey: crypto.createHash("md5").update(ch.token + c.key).digest("hex") },
-    true,
-  );
-  session = { name: login.sessionName, at: Date.now() };
-  return session.name;
+  if (loggingIn) return loggingIn;
+  loggingIn = (async () => {
+    const c = cfg()!;
+    const ch = await call<{ token: string }>({ operation: "getchallenge", username: c.user });
+    const login = await call<{ sessionName: string }>(
+      { operation: "login", username: c.user, accessKey: crypto.createHash("md5").update(ch.token + c.key).digest("hex") },
+      true,
+    );
+    session = { name: login.sessionName, at: Date.now() };
+    return session.name;
+  })();
+  try {
+    return await loggingIn;
+  } finally {
+    loggingIn = null;
+  }
 }
 
 /** Runs a call with a session, signing in again once if the session expired. */
