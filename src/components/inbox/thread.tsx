@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, Bot, CheckCircle2, ChevronDown, Clock3, PanelRight, RotateCcw, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowLeft, Bot, CheckCircle2, ChevronDown, Clock3, Megaphone, PanelRight, RotateCcw, UserPlus } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { getState, setMessages, upsertConversation, useStore } from "@/lib/store";
 import type { Conversation, Message, Priority } from "@/lib/types";
@@ -10,6 +10,7 @@ import { formatPhone } from "@/lib/format";
 import { MessageBubble } from "./message-bubble";
 import { Composer } from "./composer";
 import { SlaChip } from "./sla";
+import { EscalateDialog } from "@/components/escalate";
 
 const statusTone = { bot: "violet", open: "green", pending: "amber", resolved: "neutral" } as const;
 
@@ -24,6 +25,7 @@ export function Thread({ conversation: c, onTogglePanel, onBack }: { conversatio
   const scroller = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [escalating, setEscalating] = useState(false);
 
   // Load history, then mark read.
   useEffect(() => {
@@ -157,6 +159,10 @@ export function Thread({ conversation: c, onTogglePanel, onBack }: { conversatio
             )}
           </Dropdown>
 
+          <Button onClick={() => setEscalating(true)} title={c.escalated_to ? `Escalated to ${c.escalated_to}` : "Escalate: email a team or create a vtiger ticket"}>
+            <Megaphone className={cx("size-4", c.escalated_at && "text-amber-600")} /> <span className="hidden sm:inline">Escalate</span>
+          </Button>
+
           {c.status === "resolved" ? (
             <Button onClick={() => act({ action: "reopen" })}>
               <RotateCcw className="size-4" /> <span className="hidden sm:inline">Reopen</span>
@@ -186,6 +192,16 @@ export function Thread({ conversation: c, onTogglePanel, onBack }: { conversatio
                 )}
               </Dropdown>
             </div>
+          )}
+          {escalating && (
+            <EscalateDialog
+              ticket={c}
+              onClose={() => setEscalating(false)}
+              onDone={(conv) => {
+                upsertConversation(conv);
+                setEscalating(false);
+              }}
+            />
           )}
           <Button variant="ghost" onClick={onTogglePanel} title="Toggle details ( ] )">
             <PanelRight className="size-4" />

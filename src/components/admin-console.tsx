@@ -8,7 +8,7 @@ import type { MemberRole, Mvno } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { api, Avatar, Badge, cx, relTime, useNow } from "./ui";
 import { ActivityLog } from "./admin-activity";
-import { EmailSettings } from "./admin-email";
+import { EmailLog, EmailSettings } from "./admin-email";
 import { AiUsage } from "./admin-ai-usage";
 import { RenewToken, TokenCountdown, type TokenInfo } from "./admin-token";
 import { displayLogin } from "@/lib/login";
@@ -157,7 +157,12 @@ export function AdminConsole() {
         </div>
       )}
 
-      {tab === "email" && <EmailSettings />}
+      {tab === "email" && (
+        <>
+          <EmailSettings />
+          <EmailLog />
+        </>
+      )}
       {tab === "activity" && <ActivityLog />}
       {tab === "ai" && <AiUsage />}
 

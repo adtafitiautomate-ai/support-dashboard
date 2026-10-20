@@ -244,3 +244,85 @@ export function EmailSettings() {
     </div>
   );
 }
+
+type LoggedEmail = { id: number; created_at: string; recipients: string[]; subject: string; status: "sent" | "failed" | "not_sent"; error: string | null };
+
+/** Every email Tuongee tried to send, newest first. */
+export function EmailLog() {
+  const [status, setStatus] = useState<"" | "sent" | "failed" | "not_sent">("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState({ key: "", n: 0 });
+  const key = `${status}|${q}`;
+  const n = page.key === key ? page.n : 0;
+  const [data, setData] = useState<{ emails: LoggedEmail[]; total: number; pageSize: number } | null>(null);
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      const r = await fetch(`/api/admin/emails?status=${status}&q=${encodeURIComponent(q)}&page=${n}`);
+      if (r.ok) setData(await r.json());
+    }, 250);
+    return () => clearTimeout(t);
+  }, [status, q, n]);
+  const tone = { sent: "bg-emerald-50 text-emerald-700 ring-emerald-200", failed: "bg-red-50 text-red-700 ring-red-200", not_sent: "bg-zinc-100 text-zinc-600 ring-zinc-200" } as const;
+  const label = { sent: "Sent", failed: "Failed", not_sent: "Not sent" } as const;
+
+  return (
+    <section className="card mt-4 p-4 sm:p-5">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h3 className="font-semibold">Email log</h3>
+        <span className="text-xs text-muted">{data ? `${data.total.toLocaleString()} in the last 90 days` : ""}</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} className="h-9 rounded-full border border-line bg-white px-3 text-sm">
+            <option value="">All results</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+            <option value="not_sent">Not sent</option>
+          </select>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search subject" className="h-9 w-44 rounded-full border border-line bg-white px-3 text-sm outline-none" />
+        </div>
+      </div>
+      <div className="overflow-x-auto rounded-2xl ring-1 ring-black/5">
+        <table className="w-full min-w-[640px] text-[13px]">
+          <thead className="bg-zinc-50 text-left text-xs text-muted">
+            <tr>
+              <th className="px-3 py-2 font-medium">When</th>
+              <th className="px-3 py-2 font-medium">To</th>
+              <th className="px-3 py-2 font-medium">Subject</th>
+              <th className="px-3 py-2 font-medium">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.emails ?? []).map((e) => (
+              <tr key={e.id} className="border-t border-line/70 align-top">
+                <td className="px-3 py-2 whitespace-nowrap text-muted">{new Date(e.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                <td className="px-3 py-2">{e.recipients.join(", ")}</td>
+                <td className="px-3 py-2">{e.subject}</td>
+                <td className="px-3 py-2">
+                  <span className={cx("rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1", tone[e.status])}>{label[e.status]}</span>
+                  {e.error && <div className="mt-1 max-w-64 text-xs text-muted">{e.error}</div>}
+                </td>
+              </tr>
+            ))}
+            {data && !data.emails.length && (
+              <tr>
+                <td colSpan={4} className="px-3 py-8 text-center text-muted">
+                  No emails yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {data && data.total > data.pageSize && (
+        <div className="mt-3 flex items-center justify-end gap-2 text-xs">
+          <button disabled={n === 0} onClick={() => setPage({ key, n: n - 1 })} className="rounded-full px-3 py-1 ring-1 ring-black/10 disabled:opacity-40">
+            Newer
+          </button>
+          <span className="text-muted">Page {n + 1} of {Math.ceil(data.total / data.pageSize)}</span>
+          <button disabled={(n + 1) * data.pageSize >= data.total} onClick={() => setPage({ key, n: n + 1 })} className="rounded-full px-3 py-1 ring-1 ring-black/10 disabled:opacity-40">
+            Older
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}

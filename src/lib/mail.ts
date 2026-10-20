@@ -73,10 +73,15 @@ ${opts.cta ? `<a href="${esc(opts.cta.url)}" style="display:inline-block;backgro
 export async function sendMail(to: string[], subject: string, body: { html: string; text: string }): Promise<string | null> {
   const recipients = [...new Set(to.map((t) => t.trim()).filter(Boolean))];
   if (!recipients.length) return "No recipients";
+  let status: "sent" | "failed" | "not_sent" = "sent";
+  let error: string | null = null;
   try {
     const { settings, transport: t } = await transport();
-    if (!settings) return "SMTP is not configured";
-    if (!t) return "Email notifications are switched off";
+    if (!settings || !t) {
+      status = "not_sent";
+      error = !settings ? "SMTP is not configured" : "Email notifications are switched off";
+      return error;
+    }
     await t.sendMail({
       from: { name: settings.from_name, address: settings.from_email },
       to: recipients,
@@ -86,9 +91,16 @@ export async function sendMail(to: string[], subject: string, body: { html: stri
     });
     return null;
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("email send failed", msg);
-    return msg;
+    status = "failed";
+    error = e instanceof Error ? e.message : String(e);
+    console.error("email send failed", error);
+    return error;
+  } finally {
+    // Email log (Admin → Email): who, subject, result. Never the body: it can contain passwords.
+    await supabaseAdmin()
+      .from("email_log")
+      .insert({ recipients, subject: subject.slice(0, 300), status, error: error?.slice(0, 500) ?? null })
+      .then(({ error: e }) => e && console.error("email log", e.message), () => undefined);
   }
 }
 
