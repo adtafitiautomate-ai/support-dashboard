@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { AlarmClock, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
+import { AlarmClock, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
 import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -312,11 +312,11 @@ function Notifications() {
         <div className="card absolute right-0 mt-2 max-h-[70vh] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5">
           {notifications.length > 0 && (
             <>
-              <div className="px-2.5 py-2 text-xs font-semibold tracking-wide text-muted uppercase">Reminders</div>
+              <div className="px-2.5 py-2 text-xs font-semibold tracking-wide text-muted uppercase">Alerts</div>
               {notifications.slice(0, 8).map((n) => (
                 <button key={n.id} onClick={() => go(n.conversation_id)} className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-surface-2">
-                  <span className={cx("mt-0.5 grid size-7 shrink-0 place-items-center rounded-full", n.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
-                    <AlarmClock className="size-3.5" />
+                  <span className={cx("mt-0.5 grid size-7 shrink-0 place-items-center rounded-full", n.kind === "assigned" ? "bg-sky-50 text-sky-700" : n.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
+                    {n.kind === "assigned" ? <UserPlus className="size-3.5" /> : <AlarmClock className="size-3.5" />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className={cx("block text-[13px] leading-snug", !n.read_at && "font-semibold")}>{n.title}</span>
@@ -347,8 +347,8 @@ function Notifications() {
       {toast && (
         <div role="alert" className="fixed top-4 right-4 z-70 w-[min(22rem,calc(100vw-2rem))] rounded-2xl bg-white p-3.5 shadow-2xl ring-1 ring-black/10">
           <div className="flex items-start gap-2.5">
-            <span className={cx("grid size-8 shrink-0 place-items-center rounded-full", toast.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
-              <AlarmClock className="size-4" />
+            <span className={cx("grid size-8 shrink-0 place-items-center rounded-full", toast.kind === "assigned" ? "bg-sky-50 text-sky-700" : toast.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
+              {toast.kind === "assigned" ? <UserPlus className="size-4" /> : <AlarmClock className="size-4" />}
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold leading-snug">{toast.title}</div>

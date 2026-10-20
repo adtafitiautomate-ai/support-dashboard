@@ -1,7 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isOpen } from "@/lib/hours";
-import { appUrl, renderEmail, sendMail } from "@/lib/mail";
+import { appUrl } from "@/lib/mail";
+import { notifyUsers } from "@/lib/user-notify";
 import { contactEmailOf } from "@/lib/credentials-mail";
 import { formatMinutes, formatPhone } from "@/lib/format";
 import type { Mvno } from "@/lib/types";
@@ -121,30 +122,22 @@ export async function runReminders() {
   return sent;
 }
 
-/** In-app notification for each person, plus an email when they have an address and SMTP is set up. */
+/** Reminder alert for each person (in-app + their own email). */
 async function notify(
   people: { id: string; email?: string | null }[],
   n: { mvno: Mvno; conv: Conv; kind: string; title: string; body: string; link: string },
 ) {
-  if (!people.length) return;
-  const db = supabaseAdmin();
-  await db.from("notifications").insert(people.map((p) => ({ user_id: p.id, mvno_id: n.mvno.id, conversation_id: n.conv.id, kind: n.kind, title: n.title, body: n.body })));
-
-  let emails = people.map((p) => p.email).filter((e): e is string => !!e);
-  if (!emails.length && people.length === 1) {
-    const { data: u } = await db.auth.admin.getUserById(people[0].id);
-    const e = contactEmailOf(u.user);
-    if (e) emails = [e];
-  }
-  if (!emails.length) return;
-  await sendMail(
-    emails,
-    `[${n.mvno.name}] ${n.title}`,
-    renderEmail({
+  await notifyUsers(
+    people.map((p) => p.id),
+    {
+      mvnoId: n.mvno.id,
+      mvnoName: n.mvno.name,
+      conversationId: n.conv.id,
+      kind: n.kind,
       title: n.title,
-      intro: n.body,
-      cta: { label: "Open the chat", url: n.link },
+      body: n.body,
+      link: n.link,
       footer: "Sent because a customer is waiting for a reply in Tuongee. Reply in the app to stop these reminders.",
-    }),
+    },
   );
 }

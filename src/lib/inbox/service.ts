@@ -7,6 +7,7 @@ import { metaMarkReadAndTyping, metaSend, toMetaPayload } from "@/lib/whatsapp/m
 import { outboundPreview, type InboundMessage, type OutboundMessage, type StatusUpdate } from "@/lib/whatsapp/types";
 import type { Contact, Conversation, Message, Mvno, Priority, SenderType } from "@/lib/types";
 import { closingOf } from "@/lib/format";
+import { notifyAssigned } from "@/lib/user-notify";
 
 // ------------------------------------------------------------------ tenant lookup (hot path, cached)
 
@@ -426,6 +427,7 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
   if (agent) {
     updated = await updateConversation(conv.id, { assignee_id: agent.id });
     await logEvent(updated, `Auto-assigned to ${agent.full_name}`);
+    if (!contact.tags?.includes(SIMULATOR_TAG)) await notifyAssigned({ mvno, conv: updated, contact, assigneeId: agent.id, by: null, reason: input.reason });
     await sendMessage(
       mvno,
       updated,

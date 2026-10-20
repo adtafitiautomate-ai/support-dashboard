@@ -4,6 +4,7 @@ import { logEvent, recentMessages, resolveConversation, sendMessage, updateConve
 import { suggestReply, triage } from "@/lib/bot/ai";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { enforce, LIMITS } from "@/lib/security";
+import { notifyAssigned } from "@/lib/user-notify";
 
 const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("assign"), userId: z.guid().nullable() }),
@@ -41,6 +42,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
             handoff_at: conv.handoff_at ?? new Date().toISOString(),
           });
           await logEvent(updated, body.userId === profile.id ? `${who} took the conversation` : `${who} assigned to ${name}`, profile.id);
+          if (body.userId !== profile.id && body.userId !== conv.assignee_id) {
+            await notifyAssigned({ mvno, conv: updated, contact, assigneeId: body.userId, by: who });
+          }
           return Response.json({ conversation: updated });
         }
         const updated = await updateConversation(conv.id, { assignee_id: null });
