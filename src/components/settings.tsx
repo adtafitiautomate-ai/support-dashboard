@@ -103,6 +103,9 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
     bot_persona: mvno.bot_persona,
     sla_first_response_mins: mvno.sla_first_response_mins,
     csat_every_days: mvno.csat_every_days ?? 14,
+    reminders_enabled: mvno.reminders_enabled ?? true,
+    remind_agent_mins: mvno.remind_agent_mins ?? 10,
+    remind_supervisor_mins: mvno.remind_supervisor_mins ?? 30,
     brand_color: mvno.brand_color,
     business_hours: mvno.business_hours ?? { tz: "Africa/Kampala", open: "08:00", close: "20:00", days: [0, 1, 2, 3, 4, 5, 6] },
   });
@@ -157,6 +160,38 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
           value={form.csat_every_days}
           onChange={(e) => setForm({ ...form, csat_every_days: Math.max(0, Math.min(365, Number(e.target.value) || 0)) })}
         />
+      </Field>
+      <Field
+        label="Reminders when a customer waits for a reply"
+        hint="During working hours. The assigned agent is reminded first; supervisors and admins next (unassigned chats go straight to them). In the app's bell, and by email when email is set up."
+      >
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={form.reminders_enabled} onChange={(e) => setForm({ ...form, reminders_enabled: e.target.checked })} className="size-4" />
+            On
+          </label>
+          <span className="text-muted">Agent after</span>
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            className={cx(input, "w-20")}
+            value={form.remind_agent_mins}
+            onChange={(e) => setForm({ ...form, remind_agent_mins: Math.max(1, Math.min(1440, Number(e.target.value) || 1)) })}
+            aria-label="Remind the agent after (minutes)"
+          />
+          <span className="text-muted">min, supervisors after</span>
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            className={cx(input, "w-20")}
+            value={form.remind_supervisor_mins}
+            onChange={(e) => setForm({ ...form, remind_supervisor_mins: Math.max(1, Math.min(1440, Number(e.target.value) || 1)) })}
+            aria-label="Alert supervisors after (minutes)"
+          />
+          <span className="text-muted">min</span>
+        </div>
       </Field>
       <Field
         label="Team working hours"

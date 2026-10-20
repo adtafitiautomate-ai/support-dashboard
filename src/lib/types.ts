@@ -22,7 +22,10 @@ export interface Mvno {
   number_prefixes: string[];
   wa_waba_id?: string | null; // WhatsApp Business Account (for message templates)
   closing_message?: string; // goodbye when a chat ends (no time-of-day greeting)
-  sim_delivery?: boolean; // offers SIM/eSIM home delivery
+  sim_delivery?: boolean;
+  reminders_enabled?: boolean;
+  remind_agent_mins?: number;
+  remind_supervisor_mins?: number; // offers SIM/eSIM home delivery
   csat_every_days?: number; // ask each customer for a rating at most this often (0 = every chat)
   escalation_contacts: EscalationContact[];
   wa_phone_number_id: string | null;

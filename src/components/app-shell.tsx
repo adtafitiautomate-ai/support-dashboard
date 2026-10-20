@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
+import { AlarmClock, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
 import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -233,42 +233,106 @@ function useClickAway(open: boolean, close: () => void) {
   return ref;
 }
 
+type Reminder = { id: string; kind: string; title: string; body: string | null; conversation_id: string | null; created_at: string; read_at: string | null };
+
+/** Reminders from the server (unanswered customers), polled every 30s. */
+function useReminders() {
+  const [data, setData] = useState<{ notifications: Reminder[]; unread: number }>({ notifications: [], unread: 0 });
+  const load = useCallback(async () => {
+    const r = await fetch("/api/notifications").catch(() => null);
+    if (r?.ok) setData(await r.json());
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(() => void load(), 0);
+    const iv = setInterval(() => void load(), 30_000);
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    return () => (clearTimeout(t), clearInterval(iv), window.removeEventListener("focus", onFocus));
+  }, [load]);
+  const markRead = useCallback(async () => {
+    setData((d) => ({ notifications: d.notifications.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })), unread: 0 }));
+    await fetch("/api/notifications", { method: "POST" }).catch(() => undefined);
+  }, []);
+  return { ...data, markRead };
+}
+
 function Notifications() {
   const [open, setOpen] = useState(false);
   const ref = useClickAway(open, () => setOpen(false));
   const router = useRouter();
   const now = useNow(15_000);
   const s = useStore((s) => s);
+  const { notifications, unread, markRead } = useReminders();
   const waiting = [...s.conversations.values()]
     .filter((c) => c.status === "open" && (!c.assignee_id || (c.assignee_id === s.me?.id && c.unread_count > 0)))
     .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at))
     .slice(0, 8);
 
+  // Pop up each new reminder briefly, even when the bell is closed.
+  const [toast, setToast] = useState<Reminder | null>(null);
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const unreadNow = notifications.filter((n) => !n.read_at);
+    if (seen.current === null) {
+      seen.current = new Set(notifications.map((n) => n.id)); // don't pop old ones on page load
+      return;
+    }
+    const fresh = unreadNow.find((n) => !seen.current!.has(n.id));
+    for (const n of notifications) seen.current.add(n.id);
+    if (!fresh) return;
+    const show = setTimeout(() => setToast(fresh), 0);
+    const hide = setTimeout(() => setToast((t) => (t?.id === fresh.id ? null : t)), 12_000);
+    return () => (clearTimeout(show), clearTimeout(hide));
+  }, [notifications]);
+
+  const go = (conversationId: string | null) => {
+    setOpen(false);
+    setToast(null);
+    if (conversationId) router.push(`/inbox?c=${conversationId}`);
+  };
+
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpen((o) => !o);
+          if (!open && unread) void markRead();
+        }}
         className="relative grid size-9 place-items-center rounded-full glass text-muted transition hover:text-ink"
-        title="Waiting for you"
+        title="Reminders and chats waiting for you"
       >
         <Bell className="size-4" />
-        {waiting.length > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-danger ring-2 ring-surface" />}
+        {unread > 0 ? (
+          <span className="absolute -top-0.5 -right-0.5 grid min-w-4.5 place-items-center rounded-full bg-danger px-1 text-[10px] leading-4 font-semibold text-white ring-2 ring-surface">{unread}</span>
+        ) : (
+          waiting.length > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-danger ring-2 ring-surface" />
+        )}
       </button>
       {open && (
-        <div className="card absolute right-0 mt-2 w-80 overflow-hidden p-1.5">
+        <div className="card absolute right-0 mt-2 max-h-[70vh] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5">
+          {notifications.length > 0 && (
+            <>
+              <div className="px-2.5 py-2 text-xs font-semibold tracking-wide text-muted uppercase">Reminders</div>
+              {notifications.slice(0, 8).map((n) => (
+                <button key={n.id} onClick={() => go(n.conversation_id)} className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-surface-2">
+                  <span className={cx("mt-0.5 grid size-7 shrink-0 place-items-center rounded-full", n.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
+                    <AlarmClock className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={cx("block text-[13px] leading-snug", !n.read_at && "font-semibold")}>{n.title}</span>
+                    {n.body && <span className="block truncate text-xs text-muted">{n.body}</span>}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-muted">{relTime(n.created_at, now)}</span>
+                </button>
+              ))}
+            </>
+          )}
           <div className="px-2.5 py-2 text-xs font-semibold tracking-wide text-muted uppercase">Waiting for you</div>
           {waiting.length === 0 && <div className="px-2.5 pb-3 text-sm text-muted">All caught up ✨</div>}
           {waiting.map((c) => {
             const contact = s.contacts.get(c.contact_id);
             return (
-              <button
-                key={c.id}
-                onClick={() => {
-                  setOpen(false);
-                  router.push(`/inbox?c=${c.id}`);
-                }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-surface-2"
-              >
+              <button key={c.id} onClick={() => go(c.id)} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-surface-2">
                 <Avatar name={contact?.name ?? contact?.wa_id ?? "?"} size={30} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{contact?.name ?? (contact && formatPhone(contact.wa_id))}</div>
@@ -278,6 +342,27 @@ function Notifications() {
               </button>
             );
           })}
+        </div>
+      )}
+      {toast && (
+        <div role="alert" className="fixed top-4 right-4 z-70 w-[min(22rem,calc(100vw-2rem))] rounded-2xl bg-white p-3.5 shadow-2xl ring-1 ring-black/10">
+          <div className="flex items-start gap-2.5">
+            <span className={cx("grid size-8 shrink-0 place-items-center rounded-full", toast.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
+              <AlarmClock className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold leading-snug">{toast.title}</div>
+              {toast.body && <div className="mt-0.5 truncate text-xs text-muted">{toast.body}</div>}
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => go(toast.conversation_id)} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white">
+                  Open chat
+                </button>
+                <button onClick={() => setToast(null)} className="rounded-full px-2.5 py-1 text-xs font-medium text-muted hover:bg-zinc-100">
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
