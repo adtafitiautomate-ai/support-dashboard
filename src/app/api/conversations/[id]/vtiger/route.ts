@@ -1,11 +1,12 @@
 import { connection } from "next/server";
 import { z } from "zod";
 import { errorResponse, HttpError, requireConversation } from "@/lib/inbox/auth";
-import { addBotNote, logEvent, updateConversation } from "@/lib/inbox/service";
+import { addBotNote, logEvent, recentMessages, updateConversation } from "@/lib/inbox/service";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { appUrl } from "@/lib/mail";
 import { formatPhone } from "@/lib/format";
-import { audit, enforce, LIMITS } from "@/lib/security";
+import { allow, audit, enforce, LIMITS } from "@/lib/security";
+import { triage } from "@/lib/bot/ai";
 import { createVtigerTicket, suggestCategory, vtigerEnabled, vtigerOptions, vtigerRecordUrl } from "@/lib/vtiger";
 
 /** GET → options and suggested values for the "Send to vtiger" form (read-only on vtiger). */
@@ -13,9 +14,15 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/conversations/[
   await connection();
   try {
     if (!vtigerEnabled()) return Response.json({ enabled: false });
-    const { conv, mvno } = await requireConversation((await ctx.params).id);
+    const { profile, conv: loaded, mvno } = await requireConversation((await ctx.params).id);
+    let conv = loaded;
     if (conv.vtiger_ticket_id) {
       return Response.json({ enabled: true, existing: { no: conv.vtiger_ticket_no, url: vtigerRecordUrl(conv.vtiger_ticket_id) } });
+    }
+    // No AI summary yet (e.g. an agent took the chat directly): write one now for the description.
+    if (!conv.ai_summary && (await allow(`ai:summary:${profile.id}`, LIMITS.aiSummary))) {
+      const t = await triage(await recentMessages(conv.id, 60), "summary").catch(() => null);
+      if (t) conv = await updateConversation(conv.id, { subject: conv.subject ?? t.subject, ai_summary: t.summary, sentiment: t.sentiment, category: conv.category ?? t.category });
     }
     const o = await vtigerOptions();
     // PaxTel → "Paxtel Mobile": match the tenant's name to an organization.
@@ -26,6 +33,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/conversations/[
       options: o,
       defaults: {
         title: conv.subject ?? "",
+        description: conv.ai_summary ?? "",
         organizationId: org?.id ?? "",
         priority: o.priorities.find((p) => p.toLowerCase() === conv.priority) ?? "Normal",
         severity: conv.priority === "urgent" ? "Critical" : conv.priority === "high" || conv.category === "payment" ? "Major" : "Minor",
@@ -44,7 +52,8 @@ const Body = z.object({
   priority: z.string().min(1).max(40),
   severity: z.string().max(40).optional(),
   category: z.string().max(60).optional(),
-  note: z.string().trim().min(3).max(2000),
+  description: z.string().trim().min(10, "Add a description (what happened)").max(5000),
+  note: z.string().trim().max(2000).optional(),
 });
 
 /** POST → creates ONE real vtiger ticket for this chat (never a second). */
@@ -80,15 +89,14 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
       })
       .join("\n");
     const customer = `${contact.name ?? "Unknown"} (${formatPhone(contact.wa_id)})`;
+    // Summary first (what the vtiger team reads), then the agent's note, then the details.
     const description = [
-      `Escalated from Tuongee (WhatsApp) by ${profile.full_name}`,
+      body.description,
+      body.note ? `\nNote from ${profile.full_name}:\n${body.note}` : null,
+      `\nCustomer: ${customer}`,
       `Tenant: ${mvno.name}`,
-      `Customer: ${customer}`,
       conv.ticket_no ? `Tuongee ticket: #${conv.ticket_no}` : null,
-      ``,
-      `Note from agent:`,
-      body.note,
-      conv.ai_summary ? `\nSummary:\n${conv.ai_summary}` : null,
+      `Escalated from Tuongee (WhatsApp) by ${profile.full_name}`,
       chat ? `\nRecent chat:\n${chat}` : null,
       `\nOpen in Tuongee: ${appUrl()}/inbox?c=${conv.id}`,
     ]
@@ -108,7 +116,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
     const assignee = [...o.groups, ...o.people].find((x) => x.id === body.assignedTo)?.name ?? body.assignedTo;
     const updated = await updateConversation(conv.id, { vtiger_ticket_id: t.id, vtiger_ticket_no: t.ticket_no, escalated_at: new Date().toISOString(), escalated_to: `vtiger ${t.ticket_no} · ${assignee}` });
     await logEvent(updated, `${profile.full_name} created vtiger ticket ${t.ticket_no} for ${assignee}`, profile.id);
-    await addBotNote(updated, `🎫 vtiger ticket ${t.ticket_no} (${assignee})\nReason: ${body.note}`);
+    await addBotNote(updated, `🎫 vtiger ticket ${t.ticket_no} (${assignee})${body.note ? `\nNote: ${body.note}` : ""}`);
     await audit(profile, "vtiger.ticket_created", { mvnoId: conv.mvno_id, target: t.ticket_no, details: { conversation: conv.id, assignee } });
     return Response.json({ conversation: updated, ticket: { no: t.ticket_no, url: vtigerRecordUrl(t.id) } });
   } catch (e) {

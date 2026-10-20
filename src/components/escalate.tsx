@@ -171,7 +171,7 @@ export type VtigerInfo = {
   enabled: boolean;
   existing?: { no: string | null; url: string | null };
   options?: { organizations: VtigerOption[]; groups: VtigerOption[]; people: VtigerOption[]; priorities: string[]; severities: string[]; categories: string[] };
-  defaults?: { title: string; organizationId: string; priority: string; severity: string; category: string };
+  defaults?: { title: string; description: string; organizationId: string; priority: string; severity: string; category: string };
 };
 
 /** "vtiger ticket" tab: creates ONE real HelpDesk ticket in vtiger (production) after a confirm step. */
@@ -185,6 +185,7 @@ function VtigerForm({ ticketId, info, onClose, onDone }: { ticketId: string; inf
     priority: d?.priority ?? "Normal",
     severity: d?.severity ?? "",
     category: d?.category ?? "",
+    description: d?.description ?? "",
     note: "",
   });
   const [confirming, setConfirming] = useState(false);
@@ -192,7 +193,7 @@ function VtigerForm({ ticketId, info, onClose, onDone }: { ticketId: string; inf
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ no: string; url: string | null; conversation: Conversation } | null>(null);
   const sel = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30";
-  const missing = !f.title.trim() ? "Add a title" : !f.organizationId ? "Choose the organization" : !f.assignedTo ? "Choose who it goes to" : f.note.trim().length < 3 ? "Add a note" : null;
+  const missing = !f.title.trim() ? "Add a title" : !f.organizationId ? "Choose the organization" : !f.assignedTo ? "Choose who it goes to" : f.description.trim().length < 10 ? "Add a description" : null;
 
   if (info.existing) {
     return (
@@ -235,6 +236,7 @@ function VtigerForm({ ticketId, info, onClose, onDone }: { ticketId: string; inf
     try {
       const r = await api<{ conversation: Conversation; ticket: { no: string; url: string | null } }>(`/api/conversations/${ticketId}/vtiger`, {
         ...f,
+        note: f.note.trim() || undefined,
         severity: f.severity || undefined,
         category: f.category || undefined,
       });
@@ -317,17 +319,23 @@ function VtigerForm({ ticketId, info, onClose, onDone }: { ticketId: string; inf
         </div>
       </div>
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-muted">Note for the team</span>
+        <span className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted">
+          Description {d?.description ? <span className="rounded bg-violet-50 px-1 text-[10px] font-semibold text-violet-700">AI summary · edit if needed</span> : null}
+        </span>
         <textarea
-          rows={3}
+          rows={5}
           className={sel}
-          maxLength={2000}
-          value={f.note}
-          onChange={(e) => setF({ ...f, note: e.target.value })}
-          placeholder="What's wrong and what you need, e.g. Customer 0724… bought 10GB (UGX 12,000) yesterday, not received. Please check and credit."
+          maxLength={5000}
+          value={f.description}
+          onChange={(e) => setF({ ...f, description: e.target.value })}
+          placeholder="What happened, e.g. Customer 0724… bought 10GB (UGX 12,000) yesterday but didn't receive it. Transaction ID 1592…"
         />
       </label>
-      <p className="text-[11.5px] text-muted">The customer, their number, the summary, recent messages and a link back to this chat are added automatically.</p>
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-muted">Anything else for the team? (optional)</span>
+        <textarea rows={2} className={sel} maxLength={2000} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="e.g. Please check and credit the customer." />
+      </label>
+      <p className="text-[11.5px] text-muted">Below the description, vtiger also gets the customer, their number, recent messages and a link back to this chat.</p>
       {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {confirming ? (
