@@ -8,7 +8,7 @@ import type { KbArticle } from "@/lib/types";
 import { PageHeader } from "./app-shell";
 import { LocationsPanel } from "./locations";
 import { useWorkspace } from "./workspace";
-import { Badge, Button, cx, Pager, relTime, useNow } from "./ui";
+import { api, Badge, Button, cx, Pager, relTime, useNow } from "./ui";
 
 interface KbSource {
   id: string;
@@ -27,6 +27,7 @@ type Article = KbArticle & { source_id: string | null };
 const input = "w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-ink/30";
 
 export function KnowledgeView() {
+  const [bundleImport, setBundleImport] = useState<string | null>(null);
   const { onEvent } = useWorkspace();
   const now = useNow(30_000);
   const mvnos = useStore((s) => [...s.mvnos.values()]);
@@ -236,6 +237,24 @@ export function KnowledgeView() {
             <Button variant="primary" size="sm" className="rounded-full" onClick={() => setEditing({})}>
               <Plus className="size-3.5" /> Write article
             </Button>
+            <Button
+              size="sm"
+              className="rounded-full"
+              disabled={bundleImport === "busy"}
+              title="Builds the tappable bundle menu (Buy a bundle) from the prices in these articles. Replaces the current bundle list."
+              onClick={async () => {
+                setBundleImport("busy");
+                try {
+                  const r = await api<{ count: number; byCategory: Record<string, number> }>("/api/bundles/import", { mvnoId });
+                  setBundleImport(`Loaded ${r.count} bundles (${Object.entries(r.byCategory).map(([k, n]) => `${n} ${k}`).join(", ")}) into the bundle menu.`);
+                } catch (e) {
+                  setBundleImport((e as Error).message);
+                }
+              }}
+            >
+              {bundleImport === "busy" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Load bundles from articles
+            </Button>
+            {bundleImport && bundleImport !== "busy" && <span className="basis-full text-xs text-muted">{bundleImport}</span>}
           </div>
 
           {editing && (

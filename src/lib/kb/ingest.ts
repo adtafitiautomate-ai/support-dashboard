@@ -32,6 +32,7 @@ Turn the source into self-contained articles the assistant can answer customers 
 - Keep every concrete fact: prices, codes (USSD like *100#), steps, eligibility, timelines, contact points. Never invent anything.
 - Plain text, concise, steps as numbered lines. 40–250 words each.
 - Skip navigation, legal boilerplate, marketing fluff and anything not useful for customer support.
+- Write only customer-facing facts. Never mention the source (website, homepage, page, document, product list) and never add notes about doubts, inconsistencies or things "not confirmed". If two facts conflict, keep the more specific one; leave out anything uncertain.
 - 1–4 short lowercase tags per article.
 Return an empty list if nothing is useful.`;
 

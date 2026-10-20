@@ -217,8 +217,17 @@ async function showBundlesFromKnowledge(ctx: FlowCtx) {
     });
     return;
   }
-  const text = articles.map((a) => `*${a.title.replace(/\?$/, "")}*\n${a.body}`).join("\n\n");
-  await say(ctx, { type: "text", text: text.length > 3800 ? `${text.slice(0, 3800)}…` : text });
+  // One short answer (the best match), never a wall of articles.
+  const a = articles[0];
+  const body = a.body.length > 700 ? `${a.body.slice(0, 700).replace(/\s+\S*$/, "")}…` : a.body;
+  await say(ctx, {
+    type: "buttons",
+    body: `*${a.title.replace(/\?$/, "")}*\n${body}`.slice(0, 1024),
+    buttons: [
+      { id: "menu:human", title: "Talk to an agent" },
+      { id: "menu:main", title: "Main menu" },
+    ],
+  });
 }
 
 /** Customer asked about privacy: show the notice and offer a deletion request. */
