@@ -10,10 +10,15 @@ import { triage } from "@/lib/bot/ai";
 import { createVtigerTicket, suggestCategory, vtigerEnabled, vtigerOptions, vtigerRecordUrl } from "@/lib/vtiger";
 
 /** GET → options and suggested values for the "Send to vtiger" form (read-only on vtiger). */
-export async function GET(_req: Request, ctx: RouteContext<"/api/conversations/[id]/vtiger">) {
+export async function GET(req: Request, ctx: RouteContext<"/api/conversations/[id]/vtiger">) {
   await connection();
   try {
     if (!vtigerEnabled()) return Response.json({ enabled: false });
+    // ?quick=1: just "is vtiger available / already escalated?", instantly (no vtiger, no AI).
+    if (new URL(req.url).searchParams.has("quick")) {
+      const { conv } = await requireConversation((await ctx.params).id);
+      return Response.json({ enabled: true, existing: conv.vtiger_ticket_id ? { no: conv.vtiger_ticket_no, url: vtigerRecordUrl(conv.vtiger_ticket_id) } : undefined });
+    }
     const { profile, conv: loaded, mvno } = await requireConversation((await ctx.params).id);
     let conv = loaded;
     if (conv.vtiger_ticket_id) {

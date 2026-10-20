@@ -1,5 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 // vtiger CRM (8.x) web-service client. The integration user can read Organizations and
 // create/update Tickets only (its profile has no delete rights).
@@ -79,9 +80,20 @@ export type VtigerOptions = {
 
 let optionsCache: { at: number; data: VtigerOptions } | null = null;
 
-/** Everything the escalate form needs (read-only; cached for 10 minutes). */
+const CACHE_MS = 30 * 60_000;
+
+/**
+ * Everything the escalate form needs (read-only). Cached in memory and in the database for
+ * 30 minutes, so a freshly started server doesn't have to sign in to vtiger to show the form.
+ */
 export async function vtigerOptions(): Promise<VtigerOptions> {
-  if (optionsCache && Date.now() - optionsCache.at < 10 * 60_000) return optionsCache.data;
+  if (optionsCache && Date.now() - optionsCache.at < CACHE_MS) return optionsCache.data;
+  const db = supabaseAdmin();
+  const { data: cached } = await db.from("app_cache").select("value, updated_at").eq("key", "vtiger_options").maybeSingle();
+  if (cached && Date.now() - new Date(cached.updated_at).getTime() < CACHE_MS) {
+    optionsCache = { at: new Date(cached.updated_at).getTime(), data: cached.value as VtigerOptions };
+    return optionsCache.data;
+  }
   const [orgs, groups, describe] = await Promise.all([
     query<{ id: string; accountname: string }>("SELECT id, accountname FROM Accounts ORDER BY accountname LIMIT 200;"),
     query<{ id: string; groupname: string }>("SELECT id, groupname FROM Groups;"),
@@ -102,6 +114,7 @@ export async function vtigerOptions(): Promise<VtigerOptions> {
     categories: pick("ticketcategories"),
   };
   optionsCache = { at: Date.now(), data };
+  await db.from("app_cache").upsert({ key: "vtiger_options", value: data, updated_at: new Date().toISOString() });
   return data;
 }
 

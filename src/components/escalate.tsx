@@ -24,12 +24,27 @@ export function EscalateDialog({ ticket, onClose, onDone }: { ticket: EscalateTa
   const [error, setError] = useState<string | null>(null);
   const ready = (picked.length > 0 || extra.trim().length > 0) && note.trim().length >= 3;
   const [mode, setMode] = useState<"email" | "vtiger">("email");
+  // Quick check shows the vtiger tab at once; the lists and summary load in the background.
   const [vt, setVt] = useState<VtigerInfo | null>(null);
+  const [vtFull, setVtFull] = useState<VtigerInfo | { error: string } | null>(null);
   useEffect(() => {
-    void fetch(`/api/conversations/${ticket.id}/vtiger`)
+    let live = true;
+    void fetch(`/api/conversations/${ticket.id}/vtiger?quick=1`)
       .then((r) => r.json())
-      .then((j: VtigerInfo) => setVt(j))
-      .catch(() => setVt({ enabled: false }));
+      .then((j: VtigerInfo) => {
+        if (!live) return;
+        setVt(j);
+        if (j.enabled && !j.existing) {
+          void fetch(`/api/conversations/${ticket.id}/vtiger`)
+            .then(async (r) => ((await r.json()) as VtigerInfo & { error?: string }))
+            .then((full) => live && setVtFull(full.error ? { error: full.error } : full))
+            .catch(() => live && setVtFull({ error: "Couldn't reach vtiger. Try again in a moment." }));
+        }
+      })
+      .catch(() => live && setVt({ enabled: false }));
+    return () => {
+      live = false;
+    };
   }, [ticket.id]);
 
   async function send() {
@@ -90,7 +105,17 @@ export function EscalateDialog({ ticket, onClose, onDone }: { ticket: EscalateTa
         )}
 
         {mode === "vtiger" && vt?.enabled ? (
-          <VtigerForm ticketId={ticket.id} info={vt} onClose={onClose} onDone={onDone} />
+          vt.existing ? (
+            <VtigerForm ticketId={ticket.id} info={vt} onClose={onClose} onDone={onDone} />
+          ) : !vtFull ? (
+            <div className="flex items-center gap-2 py-8 text-sm text-muted">
+              <Loader2 className="size-4 animate-spin" /> Loading from vtiger…
+            </div>
+          ) : "error" in vtFull ? (
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{vtFull.error}</p>
+          ) : (
+            <VtigerForm ticketId={ticket.id} info={vtFull} onClose={onClose} onDone={onDone} />
+          )
         ) : (
         <>
         <div>
