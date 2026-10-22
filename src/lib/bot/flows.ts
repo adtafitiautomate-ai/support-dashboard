@@ -808,7 +808,7 @@ export async function showOffices(ctx: FlowCtx) {
 /** Appointment request, step 1: which service. */
 export async function askAppointmentService(ctx: FlowCtx) {
   await setState(ctx, { flow: "appt", awaiting: "appt_service", data: {} });
-  const services = menuOf(ctx.mvno).filter((i) => i.action === "answer");
+  const services = menuOf(ctx.mvno).filter((i) => i.action === "answer" || i.action === "id_status");
   await say(ctx, {
     type: "list",
     body: "Let's request an appointment. Which service is it for? Pick one, or type it.",

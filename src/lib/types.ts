@@ -26,6 +26,7 @@ export interface Mvno {
   google_calendar_id?: string | null;
   appointment_minutes?: number;
   reminder_template_name?: string | null;
+  id_ready_template_name?: string | null;
   reminder_template_lang?: string; // goodbye when a chat ends (no time-of-day greeting)
   sim_delivery?: boolean;
   kind?: "telecom" | "general"; // general = not a mobile network (e.g. an embassy)
@@ -90,7 +91,7 @@ export interface BotState {
   flow?: string;
   step?: string;
   data?: Record<string, unknown>;
-  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn" | "lost_number" | "lost_block" | "appt_service" | "appt_dates" | "appt_name";
+  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn" | "lost_number" | "lost_block" | "appt_service" | "appt_dates" | "appt_name" | "id_name";
   ai_turns?: number;
 }
 

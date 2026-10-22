@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { AlarmClock, CalendarCheck, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
+import { AlarmClock, CalendarCheck, IdCard, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
 import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -68,7 +68,7 @@ function FollowupBanner() {
 }
 
 /** Admins and supervisors (on any MVNO) and super admins manage; plain agents don't. */
-function useAccess() {
+export function useAccess() {
   const isSuper = useStore((s) => !!s.me?.is_platform_admin);
   const isManager = useStore(
     (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
@@ -138,6 +138,7 @@ const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/appointments", label: "Appointments", icon: CalendarCheck, generalOnly: true },
+  { href: "/register", label: "ID register", icon: IdCard, generalOnly: true },
   { href: "/dashboard", label: "Insights", icon: BarChart3, managersOnly: true },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },

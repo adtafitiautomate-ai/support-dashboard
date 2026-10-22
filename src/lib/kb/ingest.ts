@@ -26,10 +26,18 @@ const Articles = z.object({
 });
 type Article = z.infer<typeof Articles>["articles"][number];
 
-const DISTILL_PROMPT = `You are building the knowledge base for a mobile network's customer-care assistant.
+const TELECOM_INTRO = `You are building the knowledge base for a mobile network's customer-care assistant.
 Turn the source into self-contained articles the assistant can answer customers from.
 - One topic per article (a product, a policy, a how-to, a price list, an FAQ answer...). Title it the way a customer would ask about it.
-- Keep every concrete fact: prices, codes (USSD like *100#), steps, eligibility, timelines, contact points. Never invent anything.
+- Keep every concrete fact: prices, codes (USSD like *100#), steps, eligibility, timelines, contact points. Never invent anything.`;
+
+const generalIntro = (name: string) => `You are building the knowledge base for the WhatsApp assistant of ${name}, which answers questions from the public.
+Turn the source into self-contained articles the assistant can answer people from.
+- One topic per article (a service, its requirements, fees, steps, opening hours, contacts...). Title it the way a member of the public would ask about it.
+- Keep every concrete fact exactly: required documents, fees and currencies, steps, eligibility, processing times, addresses, phone numbers, emails and links. Never invent anything.
+- Skip internal or planning material (project notes, checklists of what staff must provide, demo notes): only what the public is told.`;
+
+const DISTILL_RULES = `
 - Plain text, concise, steps as numbered lines. 40–250 words each.
 - Skip navigation, legal boilerplate, marketing fluff and anything not useful for customer support.
 - Write only customer-facing facts. Never mention the source (website, homepage, page, document, product list) and never add notes about doubts, inconsistencies or things "not confirmed". If two facts conflict, keep the more specific one; leave out anything uncertain.
@@ -42,7 +50,9 @@ Return an empty list if nothing is useful.`;
 export async function ingestSource(sourceId: string, mvnoId: string, input: SourceInput) {
   const db = supabaseAdmin();
   try {
-    const articles = await withAiScope({ mvnoId, kind: "knowledge" }, () => (input.kind === "url" ? fromUrl(input.url) : fromFile(input)));
+    const { data: mvno } = await db.from("mvnos").select("name, kind").eq("id", mvnoId).single();
+    const prompt = `${mvno?.kind === "general" ? generalIntro(mvno.name) : TELECOM_INTRO}\n${DISTILL_RULES}`;
+    const articles = await withAiScope({ mvnoId, kind: "knowledge" }, () => (input.kind === "url" ? fromUrl(input.url, prompt) : fromFile(input, prompt)));
     if (!articles.length) throw new Error("No usable content found in this source");
 
     await db.from("kb_articles").delete().eq("source_id", sourceId); // re-ingest replaces
@@ -53,7 +63,9 @@ export async function ingestSource(sourceId: string, mvnoId: string, input: Sour
         title: a.title.slice(0, 200),
         body: a.body,
         tags: a.tags.map((t) => t.toLowerCase().slice(0, 30)).slice(0, 4),
-        ...(input.kind === "url" ? { source_url: input.url, verified_at: new Date().toISOString().slice(0, 10) } : {}),
+        // Every article cites where it came from (sourced-answers tenants only use cited articles).
+        source_url: input.kind === "url" ? input.url : input.name,
+        verified_at: new Date().toISOString().slice(0, 10),
       })),
     );
     if (error) throw error;
@@ -71,7 +83,7 @@ export async function ingestSource(sourceId: string, mvnoId: string, input: Sour
 
 // ------------------------------------------------------------------ files
 
-async function fromFile(f: Extract<SourceInput, { kind: "file" }>): Promise<Article[]> {
+async function fromFile(f: Extract<SourceInput, { kind: "file" }>, prompt: string): Promise<Article[]> {
   const isPdf = f.mime === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
   if (isPdf) {
     const c = claude();
@@ -79,16 +91,16 @@ async function fromFile(f: Extract<SourceInput, { kind: "file" }>): Promise<Arti
     return distill([
       { type: "document", source: { type: "base64", media_type: "application/pdf", data: f.bytes.toString("base64") }, title: f.name },
       { type: "text", text: `Source document: ${f.name}` },
-    ]);
+    ], prompt);
   }
   let text = f.bytes.toString("utf8");
   if (f.mime.includes("html") || /\.html?$/i.test(f.name)) text = htmlToText(text).text;
-  return fromText(text, f.name);
+  return fromText(text, f.name, prompt);
 }
 
 // ------------------------------------------------------------------ links
 
-async function fromUrl(raw: string): Promise<Article[]> {
+async function fromUrl(raw: string, prompt: string): Promise<Article[]> {
   const url = new URL(raw);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only http(s) links are supported");
   await assertPublicHost(url.hostname);
@@ -101,17 +113,17 @@ async function fromUrl(raw: string): Promise<Article[]> {
   if (res.status >= 300 && res.status < 400) {
     const next = res.headers.get("location");
     if (!next) throw new Error("Redirect without location");
-    return fromUrl(new URL(next, url).toString()); // re-validates the new host
+    return fromUrl(new URL(next, url).toString(), prompt); // re-validates the new host
   }
   if (!res.ok) throw new Error(`Link returned HTTP ${res.status}`);
 
   const type = res.headers.get("content-type") ?? "";
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length > 15 * 1024 * 1024) throw new Error("Page is too large (15 MB max)");
-  if (type.includes("pdf")) return fromFile({ kind: "file", name: url.pathname.split("/").pop() || "document.pdf", mime: "application/pdf", bytes: buf });
+  if (type.includes("pdf")) return fromFile({ kind: "file", name: url.pathname.split("/").pop() || "document.pdf", mime: "application/pdf", bytes: buf }, prompt);
 
   const { title, text } = type.includes("html") ? htmlToText(buf.toString("utf8")) : { title: url.hostname, text: buf.toString("utf8") };
-  return fromText(text, title || url.toString());
+  return fromText(text, title || url.toString(), prompt);
 }
 
 /** Blocks SSRF: refuses hosts that resolve to private, loopback or link-local addresses. */
@@ -155,19 +167,19 @@ const decodeEntities = (s: string) => s.replace(/&amp;/g, "&").replace(/&#39;/g,
 
 // ------------------------------------------------------------------ distillation
 
-async function fromText(text: string, name: string): Promise<Article[]> {
+async function fromText(text: string, name: string, prompt: string): Promise<Article[]> {
   const clean = text.slice(0, MAX_TEXT).trim();
   if (clean.length < 40) return [];
   if (!claude()) return splitHeuristically(clean, name);
 
   const out: Article[] = [];
   for (let i = 0; i < clean.length; i += CHUNK) {
-    out.push(...(await distill([{ type: "text", text: `Source: ${name}\n\n${clean.slice(i, i + CHUNK)}` }])));
+    out.push(...(await distill([{ type: "text", text: `Source: ${name}\n\n${clean.slice(i, i + CHUNK)}` }], prompt)));
   }
   return out;
 }
 
-async function distill(content: Anthropic.ContentBlockParam[]): Promise<Article[]> {
+async function distill(content: Anthropic.ContentBlockParam[], prompt: string): Promise<Article[]> {
   const c = claude()!;
   // Streaming: a long document can yield a lot of articles.
   const stream = c.messages.stream({
@@ -199,7 +211,7 @@ async function distill(content: Anthropic.ContentBlockParam[]): Promise<Article[
         },
       },
     },
-    system: DISTILL_PROMPT,
+    system: prompt,
     messages: [{ role: "user", content }],
   });
   const msg = await stream.finalMessage();

@@ -1,7 +1,7 @@
 // Main menu for "general business" tenants (e.g. an embassy). WhatsApp list rows allow
 // at most 10 items, titles up to 24 characters and descriptions up to 72.
 
-export type MenuAction = "answer" | "appointment" | "location" | "emergency" | "human";
+export type MenuAction = "answer" | "id_status" | "appointment" | "location" | "emergency" | "human";
 
 export interface MenuItem {
   id: string;
@@ -12,6 +12,7 @@ export interface MenuItem {
 
 export const MENU_ACTIONS: { value: MenuAction; label: string }[] = [
   { value: "answer", label: "Answer from the knowledge base" },
+  { value: "id_status", label: "National ID status check (ID register)" },
   { value: "appointment", label: "Appointment request (becomes a ticket)" },
   { value: "location", label: "Office hours and location" },
   { value: "emergency", label: "Emergency help (urgent alert)" },
@@ -19,7 +20,7 @@ export const MENU_ACTIONS: { value: MenuAction; label: string }[] = [
 ];
 
 export const DEFAULT_GENERAL_MENU: MenuItem[] = [
-  { id: "national_id", title: "National ID", description: "Check your ID status and where to pick it up", action: "answer" },
+  { id: "national_id", title: "National ID", description: "Check your ID status and where to pick it up", action: "id_status" },
   { id: "passports_visas", title: "Passports and visas", description: "Steps, requirements and official links", action: "answer" },
   { id: "documents", title: "Official documents", description: "Incl. emergency travel documents", action: "answer" },
   { id: "appointment", title: "Book an appointment", description: "Send a request; an officer confirms the slot", action: "appointment" },

@@ -608,6 +608,7 @@ function CalendarSettings({ mvno }: { mvno: Mvno }) {
     minutes: mvno.appointment_minutes ?? 30,
     templateName: mvno.reminder_template_name ?? "",
     templateLang: mvno.reminder_template_lang ?? "en",
+    idTemplate: mvno.id_ready_template_name ?? "",
   });
   const [keyJson, setKeyJson] = useState("");
   const [sa, setSa] = useState<string | null>(null);
@@ -626,8 +627,8 @@ function CalendarSettings({ mvno }: { mvno: Mvno }) {
         e.preventDefault();
         setTest(null);
         void saver.run(async () => {
-          await api("/api/settings/calendar", { action: "save", mvnoId: mvno.id, calendarId: f.calendarId || null, minutes: f.minutes, templateName: f.templateName || null, templateLang: f.templateLang, serviceAccountJson: keyJson || undefined });
-          patch((s) => s.mvnos.set(mvno.id, { ...mvno, google_calendar_id: f.calendarId || null, appointment_minutes: f.minutes, reminder_template_name: f.templateName || null, reminder_template_lang: f.templateLang }));
+          await api("/api/settings/calendar", { action: "save", mvnoId: mvno.id, calendarId: f.calendarId || null, minutes: f.minutes, templateName: f.templateName || null, templateLang: f.templateLang, idTemplate: f.idTemplate || null, serviceAccountJson: keyJson || undefined });
+          patch((s) => s.mvnos.set(mvno.id, { ...mvno, google_calendar_id: f.calendarId || null, appointment_minutes: f.minutes, reminder_template_name: f.templateName || null, reminder_template_lang: f.templateLang, id_ready_template_name: f.idTemplate || null }));
           if (keyJson) {
             try {
               setSa(JSON.parse(keyJson).client_email ?? sa);
@@ -674,6 +675,9 @@ function CalendarSettings({ mvno }: { mvno: Mvno }) {
           <input className={input} value={f.templateLang} onChange={(e) => setF({ ...f, templateLang: e.target.value.trim() })} placeholder="en" />
         </Field>
       </div>
+      <Field label="ID arrived template (optional)" hint="Approved WhatsApp template for telling people on the ID register waiting list that their card arrived, when their 24-hour window has closed. Variables: {{1}} first name, {{2}} batch. Same language as above.">
+        <input className={input} value={f.idTemplate} onChange={(e) => setF({ ...f, idTemplate: e.target.value.trim() })} placeholder="national_id_ready" />
+      </Field>
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="primary">Save</Button>
         <Button

@@ -26,6 +26,7 @@ import { closingOf } from "@/lib/format";
 import { mediaForAi } from "@/lib/whatsapp/media";
 import type { MenuAction } from "@/lib/menu";
 import { notifyUsers } from "@/lib/user-notify";
+import { lookupNationalId, nameKey } from "@/lib/id-register";
 import { appUrl, renderEmail, sendMail } from "@/lib/mail";
 
 /** Entry point for every inbound WhatsApp message, from Meta or the simulator. */
@@ -228,6 +229,11 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         }
         return F.askAppointmentDates(ctx, item.title);
       }
+      case "idw": // "Notify me" when a National ID batch with their name arrives
+        if (typeof state.data?.idname === "string") return watchNationalId(ctx, state.data.idname);
+        return askIdName(ctx);
+      case "idc":
+        return askIdName(ctx);
       case "lost": // lost:this | lost:block:<both|line|none>
         if (a === "this") return F.askLostBlock(ctx, ctx.contact.wa_id);
         if (a === "block" && typeof state.data?.msisdn === "string") return finishLostLine(ctx, state.data.msisdn, b === "both" || b === "line" || b === "none" ? b : "both");
@@ -245,6 +251,12 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
     if (state.awaiting === "appt_service") return F.askAppointmentDates(ctx, text.slice(0, 100));
     if (state.awaiting === "appt_dates" && d.service) return F.askAppointmentName(ctx, d.service, text.slice(0, 200));
     if (state.awaiting === "appt_name" && d.service && d.dates) return finishAppointment(ctx, d.service, d.dates, text.slice(0, 120));
+  }
+  if (state.awaiting === "id_name" && text && !isEscape(text)) {
+    // A question instead of a name ("where do I collect it?") goes to the AI.
+    if (!/[?]/.test(text) && text.split(/\s+/).length <= 6 && !/\b(how|where|when|what|why|can|do|is|my|i)\b/i.test(text)) return checkNationalId(ctx, text.slice(0, 120));
+    await updateConversation(ctx.conv.id, { bot_state: {} });
+    ctx.conv = { ...ctx.conv, bot_state: {} };
   }
   if (state.awaiting === "lost_number" && text && !isEscape(text)) {
     const msisdn = F.normalizeMsisdn(text);
@@ -335,7 +347,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   });
   if (!turn) return keywordFallback(ctx, text);
 
-  const cited = turn.tools.some((t) => ["answer_from_kb", "handoff_to_agent", "resolve_conversation", "request_appointment", "emergency_help", "show_offices", "show_main_menu"].includes(t.name));
+  const cited = turn.tools.some((t) => ["answer_from_kb", "handoff_to_agent", "resolve_conversation", "request_appointment", "emergency_help", "show_offices", "show_main_menu", "check_national_id"].includes(t.name));
   if (ctx.mvno.strict_sources && turn.text && !cited && turn.text.length > 220) {
     // Sourced answers only: a long factual-looking reply with no cited article is not sent.
     await F.say(ctx, {
@@ -413,6 +425,10 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
       return emergencyHelp(ctx, String(input.summary ?? ""));
     case "show_offices":
       return generalAction(ctx, "location", "Office hours & location");
+    case "check_national_id": {
+      const name = String(input.full_name ?? "").trim();
+      return name ? checkNationalId(ctx, name.slice(0, 120)) : askIdName(ctx);
+    }
     case "answer_from_kb":
       return answerFromKb(ctx, String(input.article_id ?? ""), String(input.answer ?? ""));
     case "sim_replacement_help":
@@ -638,6 +654,8 @@ async function generalAction(ctx: F.FlowCtx, action: MenuAction, title: string) 
   switch (action) {
     case "appointment":
       return F.askAppointmentService(ctx);
+    case "id_status":
+      return askIdName(ctx);
     case "location":
       if (await F.showOffices(ctx)) return;
       return aiTopic(ctx, title); // no offices in Locations: answer from the knowledge base
@@ -684,6 +702,83 @@ async function emergencyHelp(ctx: F.FlowCtx, summary: string) {
       renderEmail({ brand: ctx.mvno, title: `Emergency: ${who} needs urgent help`, intro: summary || "Customer chose Emergency help", cta: { label: "Open the chat", url: `${appUrl()}/inbox?c=${ctx.conv.id}` } }),
     );
   }
+}
+
+// ------------------------------------------------------------------ National ID register
+
+async function askIdName(ctx: F.FlowCtx, attempt = 0) {
+  await updateConversation(ctx.conv.id, { bot_state: { flow: "id", awaiting: "id_name", data: { attempt } } });
+  await F.say(ctx, { type: "text", text: "I can check if your National ID card has arrived. Please send your *full name exactly as on your application form* (all your names)." });
+}
+
+const ID_OFFICER = [
+  { id: "menu:human", title: "Talk to an officer" },
+  { id: "menu:main", title: "Main menu" },
+];
+
+/** Looks the name up in the uploaded registers. Only ever confirms the customer's own name. */
+async function checkNationalId(ctx: F.FlowCtx, name: string) {
+  const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const { data: latest } = await supabaseAdmin()
+    .from("id_batches")
+    .select("label, batch_date, created_at")
+    .eq("mvno_id", ctx.mvno.id)
+    .eq("status", "ready")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!latest) {
+    await updateConversation(ctx.conv.id, { bot_state: {} });
+    return F.say(ctx, { type: "buttons", body: "The list of National ID cards received isn't available here yet. An officer can check for you.", buttons: ID_OFFICER });
+  }
+  const r = await lookupNationalId(ctx.mvno.id, name);
+  await logEvent(ctx.conv, `National ID check for "${name}": ${r.kind === "found" ? `found in ${r.batch.label}` : r.kind}`).catch(() => undefined);
+  const attempt = Number(ctx.conv.bot_state?.data?.attempt ?? 0);
+
+  switch (r.kind) {
+    case "found":
+      await updateConversation(ctx.conv.id, { bot_state: {} });
+      return F.say(ctx, {
+        type: "buttons",
+        body: `✅ Good news! A National ID card for *${r.fullName}* has arrived${r.received ? ` (in the cards received as of ${day(r.received)})` : ""}.\n\nAsk me *how to collect it* if you need the steps.\n\n📄 Source: ${r.batch.label}${r.batch.source ? ` (${r.batch.source})` : ""}`,
+        buttons: ID_OFFICER,
+      });
+    case "too_short":
+      return askIdName(ctx, attempt);
+    case "near":
+      if (attempt < 1) {
+        await updateConversation(ctx.conv.id, { bot_state: { flow: "id", awaiting: "id_name", data: { attempt: attempt + 1 } } });
+        return F.say(ctx, { type: "text", text: "I couldn't find that exact name. Please check the spelling and send your names *exactly as on your application form*." });
+      }
+    // falls through: still not exact after a retry, so an officer checks
+    case "ambiguous":
+    case "duplicate":
+      await updateConversation(ctx.conv.id, { bot_state: {} });
+      return F.say(ctx, { type: "buttons", body: "I can't confirm this from the register by name alone. An officer can check it for you.", buttons: ID_OFFICER });
+    case "none":
+      await updateConversation(ctx.conv.id, { bot_state: { flow: "id", data: { idname: name } } });
+      return F.say(ctx, {
+        type: "buttons",
+        body: `I couldn't find *${name}* in the cards received so far (latest: ${latest.label}${latest.batch_date ? `, ${day(latest.batch_date)}` : ""}).\n\nI can message you here as soon as it arrives.`,
+        buttons: [{ id: "idw:yes", title: "🔔 Notify me" }, ...ID_OFFICER],
+      });
+  }
+}
+
+async function watchNationalId(ctx: F.FlowCtx, name: string) {
+  const { error } = await supabaseAdmin()
+    .from("id_watch")
+    .upsert(
+      { mvno_id: ctx.mvno.id, contact_id: ctx.contact.id, conversation_id: ctx.conv.id, full_name: name, name_key: nameKey(name), status: "waiting", matched_batch_id: null, notified_at: null },
+      { onConflict: "mvno_id,contact_id,name_key" },
+    );
+  await updateConversation(ctx.conv.id, { bot_state: {} });
+  if (error) {
+    console.error("id watch", error.message);
+    return F.say(ctx, { type: "buttons", body: "Sorry, I couldn't save that. An officer can help.", buttons: ID_OFFICER });
+  }
+  await logEvent(ctx.conv, `Added "${name}" to the National ID waiting list`).catch(() => undefined);
+  return F.say(ctx, { type: "text", text: `🔔 Done. I'll message you here when a card for *${name}* arrives.` });
 }
 
 /** Appointment request → ticket with the details, for an officer to confirm. */

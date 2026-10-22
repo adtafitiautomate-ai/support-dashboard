@@ -82,6 +82,7 @@ ${
 - Appointments: call request_appointment (it collects the details and creates a request an officer confirms). Never promise a date or time yourself.
 - Emergencies (someone in danger, arrested, injured, in hospital, lost or stolen documents while travelling, any urgent safety issue): call emergency_help immediately.
 - Office address or opening hours: call show_offices.
+- "Has my National ID arrived?" or any ID status question: call check_national_id (with their full name if they gave it). Never say yourself whether a card has arrived, never guess, and never mention anyone else's name. How to collect a card is a normal knowledge-base question.
 - Wanting a person, complaints, or anything you can't answer from the knowledge base: call handoff_to_agent.
 - Never ask for passwords or PINs. Don't ask for full ID or passport numbers unless an article says they're needed.
 - Ending a chat: only when the customer says they're done (thanks, that's all, bye), call resolve_conversation and write NO goodbye yourself: the system sends the closing message ("${closingOf(mvno)}"). Never close while the customer is waiting on us; end with the next step instead.
@@ -392,6 +393,17 @@ const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
     name: "emergency_help",
     description: "Urgent help: sends the emergency contact details immediately and alerts the duty officers. Use for anyone in danger, arrested, injured, in hospital, or with lost/stolen documents while travelling.",
     input_schema: { type: "object", properties: { summary: { type: "string", description: "One line: what happened and where, from what the customer said." } }, required: ["summary"], additionalProperties: false },
+    strict: true,
+  },
+  {
+    name: "check_national_id",
+    description: "Check whether the customer's National ID card has arrived, in the uploaded register of received cards. Only the customer's own name is checked; the system replies.",
+    input_schema: {
+      type: "object",
+      properties: { full_name: { type: "string", description: "The customer's full name as they gave it, else empty string (the system then asks for it)." } },
+      required: ["full_name"],
+      additionalProperties: false,
+    },
     strict: true,
   },
   {

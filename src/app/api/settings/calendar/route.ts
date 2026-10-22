@@ -26,6 +26,7 @@ const Body = z.discriminatedUnion("action", [
     calendarId: z.string().trim().max(300).nullable(),
     minutes: z.number().int().min(5).max(480),
     templateName: z.string().trim().max(512).nullable(),
+    idTemplate: z.string().trim().max(512).nullable().optional(),
     templateLang: z.string().trim().max(20).default("en"),
     serviceAccountJson: z.string().max(10_000).optional(), // only when replacing the key
   }),
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     }
     const { error } = await db
       .from("mvnos")
-      .update({ google_calendar_id: body.calendarId || null, appointment_minutes: body.minutes, reminder_template_name: body.templateName || null, reminder_template_lang: body.templateLang || "en" })
+      .update({ google_calendar_id: body.calendarId || null, appointment_minutes: body.minutes, reminder_template_name: body.templateName || null, reminder_template_lang: body.templateLang || "en", ...(body.idTemplate !== undefined && { id_ready_template_name: body.idTemplate || null }) })
       .eq("id", body.mvnoId);
     if (error) throw error;
     forgetMvno(body.mvnoId);
