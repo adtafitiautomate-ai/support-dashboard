@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { forgetMvno } from "@/lib/inbox/service";
 import { setMvnoToken } from "@/lib/wa-tokens";
 import { audit, enforce, LIMITS } from "@/lib/security";
+import { DEFAULT_GENERAL_MENU } from "@/lib/menu";
 
 const Fields = z.object({
   name: z.string().trim().min(2).max(60),
@@ -24,6 +25,9 @@ const Fields = z.object({
   ussd_codes: z
     .object({ balance: z.string().max(20).optional(), self_service: z.string().max(20).optional(), promos: z.string().max(20).optional() })
     .optional(),
+  kind: z.enum(["telecom", "general"]).optional(),
+  strict_sources: z.boolean().optional(),
+  emergency_message: z.string().trim().max(1000).optional().nullable(),
 });
 
 const Body = z.discriminatedUnion("action", [
@@ -48,6 +52,7 @@ export async function POST(req: Request) {
 
     if (body.action === "create") {
       const m = body.mvno;
+      const general = m.kind === "general";
       const slug = slugify(m.name);
       if (!slug) throw new HttpError(400, "Pick a name with letters or numbers");
       const { data, error } = await db
@@ -57,14 +62,22 @@ export async function POST(req: Request) {
           slug,
           wa_phone_number_id: `SIM-${slug.toUpperCase()}`, // simulator until a WhatsApp number is connected
           greeting: m.greeting || `Hi 👋 Welcome to ${m.name}! I'm ${m.bot_name}, your virtual assistant.`,
-          bot_persona: m.bot_persona || `Friendly, clear and helpful customer care for ${m.name}, a mobile network in Uganda. Reply in the customer's language.`,
+          bot_persona:
+            m.bot_persona ||
+            (general
+              ? `Courteous, calm and precise assistant for ${m.name}. Plain language, no jargon. Reply in the customer's language.`
+              : `Friendly, clear and helpful customer care for ${m.name}, a mobile network in Uganda. Reply in the customer's language.`),
           ussd_codes: m.ussd_codes ?? {},
+          // General businesses start with the standard menu and sourced answers only.
+          ...(general ? { menu_items: DEFAULT_GENERAL_MENU, strict_sources: m.strict_sources ?? true, wallet_name: "" } : {}),
         })
         .select()
         .single();
       if (error?.code === "23505") throw new HttpError(409, "A tenant with that name already exists");
       if (error) throw error;
-      await db.from("canned_responses").insert(DEFAULT_REPLIES.map(([shortcut, title, text]) => ({ mvno_id: data.id, shortcut, title, body: text })));
+      await db
+        .from("canned_responses")
+        .insert(DEFAULT_REPLIES.filter(([s]) => !general || s !== "ref").map(([shortcut, title, text]) => ({ mvno_id: data.id, shortcut, title, body: text })));
       await audit(me, "mvno.created", { mvnoId: data.id, target: data.name });
       return Response.json({ mvno: data });
     }

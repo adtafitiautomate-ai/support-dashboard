@@ -6,6 +6,7 @@ import type { Bundle, Contact, Conversation, Delivery, Mvno, Outlet } from "@/li
 import type { OutboundMessage } from "@/lib/whatsapp/types";
 import { sendMessage, updateConversation, logEvent } from "@/lib/inbox/service";
 import { pickOutletsNear } from "./ai";
+import { DEFAULT_GENERAL_MENU, MAX_MENU_ITEMS } from "@/lib/menu";
 
 // Deterministic, button-driven flows. Anything touching money runs here,
 // never through free-form AI output.
@@ -28,6 +29,7 @@ async function setState(ctx: FlowCtx, state: Conversation["bot_state"], extra: P
 
 export async function showMenu(ctx: FlowCtx, intro?: string) {
   await setState(ctx, {});
+  if (ctx.mvno.kind === "general") return showGeneralMenu(ctx, intro);
   await say(ctx, {
     type: "list",
     header: ctx.mvno.name,
@@ -766,4 +768,61 @@ export async function createDelivery(
       { id: "menu:main", title: "Main menu" },
     ],
   });
+}
+
+// ------------------------------------------------------------------ general tenants (e.g. an embassy)
+
+const menuOf = (m: Mvno) => (m.menu_items?.length ? m.menu_items : DEFAULT_GENERAL_MENU).slice(0, MAX_MENU_ITEMS);
+
+/** The tenant's own menu (one WhatsApp list, up to 10 rows). */
+async function showGeneralMenu(ctx: FlowCtx, intro?: string) {
+  await say(ctx, {
+    type: "list",
+    header: ctx.mvno.name.slice(0, 60),
+    body: intro ?? "How can we help? Pick an option below, or just type your question.",
+    button: "Menu",
+    footer: "Reply 'menu' anytime",
+    sections: [{ title: "How can we help?", rows: menuOf(ctx.mvno).map((i) => ({ id: `gm:${i.id}`, title: i.title.slice(0, 24), description: i.description?.slice(0, 72) })) }],
+  });
+}
+
+export const generalMenuItem = (m: Mvno, id: string) => menuOf(m).find((i) => i.id === id);
+
+/** Office address(es), hours, phone and a map pin, from the tenant's Locations. */
+export async function showOffices(ctx: FlowCtx) {
+  const { data } = await supabaseAdmin().from("outlets").select("*").eq("mvno_id", ctx.mvno.id).limit(5);
+  const offices = (data ?? []) as Outlet[];
+  if (!offices.length) return false;
+  await setState(ctx, {});
+  await say(ctx, {
+    type: "text",
+    text: offices
+      .map((o) => `📍 *${o.name}*\n${o.address}${o.hours ? `\n🕒 ${o.hours}` : ""}${o.phone ? `\n☎️ ${o.phone}` : ""}`)
+      .join("\n\n"),
+  });
+  const pin = offices.find((o) => o.lat !== null && o.lng !== null);
+  if (pin) await say(ctx, { type: "location", lat: pin.lat!, lng: pin.lng!, name: pin.name, address: pin.address });
+  return true;
+}
+
+/** Appointment request, step 1: which service. */
+export async function askAppointmentService(ctx: FlowCtx) {
+  await setState(ctx, { flow: "appt", awaiting: "appt_service", data: {} });
+  const services = menuOf(ctx.mvno).filter((i) => i.action === "answer");
+  await say(ctx, {
+    type: "list",
+    body: "Let's request an appointment. Which service is it for? Pick one, or type it.",
+    button: "Services",
+    sections: [{ title: "Services", rows: [...services.map((i) => ({ id: `appt:${i.id}`, title: i.title.slice(0, 24) })), { id: "appt:other", title: "Something else" }].slice(0, 10) }],
+  });
+}
+
+export async function askAppointmentDates(ctx: FlowCtx, service: string) {
+  await setState(ctx, { flow: "appt", awaiting: "appt_dates", data: { service } });
+  await say(ctx, { type: "text", text: `*${service}*: which days and times suit you? You can give more than one, e.g. _Mon 3 Nov morning or Wed 5 Nov after 2pm_.` });
+}
+
+export async function askAppointmentName(ctx: FlowCtx, service: string, dates: string) {
+  await setState(ctx, { flow: "appt", awaiting: "appt_name", data: { service, dates } });
+  await say(ctx, { type: "text", text: "And your *full name*, as it appears on your ID or passport?" });
 }

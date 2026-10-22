@@ -408,6 +408,8 @@ export interface HandoffInput {
   reason: string;
   priority?: Priority;
   category?: string;
+  /** The caller already told the customer what happens next: send no handoff message. */
+  quiet?: boolean;
 }
 
 /** Moves a conversation from the bot to the human queue and auto-assigns if possible. */
@@ -428,7 +430,8 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
     updated = await updateConversation(conv.id, { assignee_id: agent.id });
     await logEvent(updated, `Auto-assigned to ${agent.full_name}`);
     if (!contact.tags?.includes(SIMULATOR_TAG)) await notifyAssigned({ mvno, conv: updated, contact, assigneeId: agent.id, by: null, reason: input.reason });
-    await sendMessage(
+    if (!input.quiet)
+      await sendMessage(
       mvno,
       updated,
       contact,
@@ -441,14 +444,15 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
     updated = await updateConversation(conv.id, { followup_reason: afterHours ? "after_hours" : "no_agents" });
     await logEvent(updated, afterHours ? "Arrived after hours: waiting for follow-up" : "No agents online: waiting for follow-up");
     const ref = updated.ticket_no ? ` (ticket #${updated.ticket_no})` : "";
-    await sendMessage(
+    if (!input.quiet)
+      await sendMessage(
       mvno,
       updated,
       contact,
       {
         type: "text",
         // Never say the team is offline: just confirm the request is logged and will be followed up.
-        text: `I've logged your request${ref} with everything you've shared. An agent will follow up with you.`,
+        text: `I've logged your request${ref} with everything you've shared. ${mvno.kind === "general" ? "A member of our team" : "An agent"} will follow up with you.`,
       },
       { senderType: "bot" },
     );
@@ -456,7 +460,8 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
   } else {
     const pos = await queuePosition(updated);
     const wait = Math.max(mvno.sla_first_response_mins, pos * 2);
-    await sendMessage(
+    if (!input.quiet)
+      await sendMessage(
       mvno,
       updated,
       contact,

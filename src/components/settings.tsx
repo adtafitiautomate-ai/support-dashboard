@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, Megaphone, MessageSquareText, Plus, Smartphone, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, Megaphone, MessageSquareText, Plus, Smartphone, Trash2 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { patch, useStore } from "@/lib/store";
 import type { CannedResponse, EscalationContact, Mvno } from "@/lib/types";
 import { api, Badge, Button, cx } from "./ui";
 import { PageHeader } from "./app-shell";
+import { DEFAULT_GENERAL_MENU, MAX_MENU_ITEMS, MENU_ACTIONS, type MenuAction, type MenuItem } from "@/lib/menu";
 
 type Tab = "bot" | "whatsapp" | "canned" | "escalations";
 
@@ -53,6 +54,7 @@ export function SettingsView() {
             </button>
           ))}
         </div>
+        {mvno && tab === "bot" && mvno.kind === "general" && <GeneralSettings key={`g-${mvno.id}`} mvno={mvno} />}
         {mvno && tab === "bot" && <BotSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "whatsapp" && <WhatsAppSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "canned" && <CannedSettings key={mvno.id} mvno={mvno} />}
@@ -423,6 +425,101 @@ function EscalationSettings({ mvno }: { mvno: Mvno }) {
           <Plus className="size-4" /> Add contact
         </Button>
         <Button variant="primary">Save</Button>
+        <SaveMsg msg={saver.msg} />
+      </div>
+    </form>
+  );
+}
+
+/** General-business tenants: their own WhatsApp menu, emergency message and sourced-answers rule. */
+function GeneralSettings({ mvno }: { mvno: Mvno }) {
+  const [items, setItems] = useState<MenuItem[]>(mvno.menu_items?.length ? mvno.menu_items : DEFAULT_GENERAL_MENU);
+  const [emergency, setEmergency] = useState(mvno.emergency_message ?? "");
+  const [strict, setStrict] = useState(mvno.strict_sources ?? true);
+  const saver = useSaver();
+  const update = (i: number, patchItem: Partial<MenuItem>) => setItems(items.map((x, j) => (j === i ? { ...x, ...patchItem } : x)));
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= items.length) return;
+    const next = [...items];
+    [next[i], next[j]] = [next[j], next[i]];
+    setItems(next);
+  };
+
+  return (
+    <form
+      className="mb-4 space-y-5 card p-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void saver.run(async () => {
+          const clean = items
+            .map((x) => ({ ...x, title: x.title.trim().slice(0, 24), description: x.description?.trim().slice(0, 72) || undefined }))
+            .filter((x) => x.title);
+          if (!clean.length) return { error: { message: "Add at least one menu item" } };
+          const res = await supabaseBrowser()
+            .from("mvnos")
+            .update({ menu_items: clean, emergency_message: emergency.trim() || null, strict_sources: strict })
+            .eq("id", mvno.id)
+            .select()
+            .single();
+          if (res.data) patch((s) => s.mvnos.set(mvno.id, res.data as Mvno));
+          if (!res.error && !res.data) return { error: { message: "Only tenant admins can change these settings" } };
+          return res;
+        });
+      }}
+    >
+      <div>
+        <div className="text-sm font-medium">WhatsApp menu</div>
+        <p className="mt-0.5 text-xs text-muted">Shown when customers say hi or type &ldquo;menu&rdquo;. Up to {MAX_MENU_ITEMS} rows; titles up to 24 characters. Customers can also just type a question.</p>
+      </div>
+      <ol className="space-y-2">
+        {items.map((it, i) => (
+          <li key={it.id} className="grid gap-2 rounded-xl bg-zinc-50 p-2.5 ring-1 ring-black/5 sm:grid-cols-[1fr_1.3fr_1fr_auto]">
+            <input className={input} maxLength={24} value={it.title} onChange={(e) => update(i, { title: e.target.value })} placeholder="Title" aria-label="Menu title" />
+            <input className={input} maxLength={72} value={it.description ?? ""} onChange={(e) => update(i, { description: e.target.value })} placeholder="Short description (optional)" aria-label="Menu description" />
+            <select className={input} value={it.action} onChange={(e) => update(i, { action: e.target.value as MenuAction })} aria-label="What it does">
+              {MENU_ACTIONS.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center justify-end gap-0.5">
+              <Button type="button" variant="ghost" size="sm" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">
+                <ArrowUp className="size-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => move(i, 1)} disabled={i === items.length - 1} aria-label="Move down">
+                <ArrowDown className="size-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label={`Remove ${it.title}`}>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {items.length < MAX_MENU_ITEMS && (
+        <Button type="button" onClick={() => setItems([...items, { id: crypto.randomUUID().slice(0, 8), title: "", action: "answer" }])}>
+          <Plus className="size-4" /> Add menu item
+        </Button>
+      )}
+
+      <Field label="Emergency message" hint='Sent instantly when someone taps "Emergency help" or describes an emergency, before an officer is alerted. Include your 24-hour emergency number.'>
+        <textarea rows={3} className={input} maxLength={1000} value={emergency} onChange={(e) => setEmergency(e.target.value)} placeholder="🚨 If you are in immediate danger, call the local emergency services. Our 24-hour emergency line: +…" />
+      </Field>
+
+      <label className="flex items-start gap-2.5 text-sm">
+        <input type="checkbox" className="mt-0.5 size-4" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
+        <span>
+          <b className="font-medium">Sourced answers only</b>
+          <span className="block text-xs text-muted">
+            The bot only uses knowledge articles that have a source page and a last-verified date, adds both to every answer, and refuses anything it can&apos;t source.
+          </span>
+        </span>
+      </label>
+
+      <div className="flex items-center gap-3">
+        <Button variant="primary">Save menu & rules</Button>
         <SaveMsg msg={saver.msg} />
       </div>
     </form>

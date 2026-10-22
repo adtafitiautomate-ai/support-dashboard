@@ -32,6 +32,7 @@ export function KnowledgeView() {
   const now = useNow(30_000);
   const mvnos = useStore((s) => [...s.mvnos.values()]);
   const [mvnoId, setMvnoId] = useState(mvnos[0]?.id ?? "");
+  const strictTenant = !!mvnos.find((x) => x.id === mvnoId)?.strict_sources;
   const [sources, setSources] = useState<KbSource[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [filter, setFilter] = useState<string>("all"); // all | manual | <sourceId>
@@ -45,7 +46,7 @@ export function KnowledgeView() {
     const loadSources = () =>
       supabase.from("kb_sources").select("*").eq("mvno_id", mvnoId).order("created_at", { ascending: false }).then(({ data }) => setSources(data ?? []));
     const loadArticles = () =>
-      supabase.from("kb_articles").select("id,mvno_id,source_id,title,body,tags,updated_at").eq("mvno_id", mvnoId).order("title").limit(2000).then(({ data }) => setArticles((data ?? []) as Article[]));
+      supabase.from("kb_articles").select("id,mvno_id,source_id,title,body,tags,updated_at,source_url,verified_at").eq("mvno_id", mvnoId).order("title").limit(2000).then(({ data }) => setArticles((data ?? []) as Article[]));
     void loadSources();
     void loadArticles();
     // Live: a source flips to ready/failed while you watch; reload its articles.
@@ -82,7 +83,17 @@ export function KnowledgeView() {
   async function saveArticle(e: { preventDefault(): void }) {
     e.preventDefault();
     if (!editing) return;
-    const row = { mvno_id: mvnoId, title: editing.title ?? "", body: editing.body ?? "", tags: editing.tags ?? [], updated_at: new Date().toISOString() };
+    const url = editing.source_url?.trim() || null;
+    if (url && !/^https?:\/\/\S+\.\S+/i.test(url)) return alert("The source must be a web address starting with https://");
+    const row = {
+      mvno_id: mvnoId,
+      title: editing.title ?? "",
+      body: editing.body ?? "",
+      tags: editing.tags ?? [],
+      source_url: url,
+      verified_at: editing.verified_at || null,
+      updated_at: new Date().toISOString(),
+    };
     const supabase = supabaseBrowser();
     const res = editing.id
       ? await supabase.from("kb_articles").update(row).eq("id", editing.id).select().single()
@@ -273,6 +284,16 @@ export function KnowledgeView() {
                 value={(editing.tags ?? []).join(", ")}
                 onChange={(e) => setEditing({ ...editing, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
               />
+              <div className="grid gap-2 sm:grid-cols-[1fr_170px]">
+                <input className={input} type="url" placeholder="Source page, e.g. https://… (official page these facts come from)" value={editing.source_url ?? ""} onChange={(e) => setEditing({ ...editing, source_url: e.target.value })} />
+                <input className={input} type="date" title="Last verified" value={editing.verified_at ?? ""} onChange={(e) => setEditing({ ...editing, verified_at: e.target.value })} />
+              </div>
+              {strictTenant && (!editing.source_url || !editing.verified_at) && (
+                <p className="text-[11.5px] text-amber-700">This tenant uses sourced answers only: the bot won&apos;t use this article until it has a source page and a last-verified date.</p>
+              )}
+              <button type="button" className="text-left text-[11.5px] font-medium text-muted hover:text-ink" onClick={() => setEditing({ ...editing, verified_at: new Date().toISOString().slice(0, 10) })}>
+                ✓ I checked this against the source today
+              </button>
               <div className="flex gap-2">
                 <Button variant="primary">Save</Button>
                 <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
@@ -297,6 +318,13 @@ export function KnowledgeView() {
                         </Badge>
                       ) : (
                         <Badge tone="violet">hand-written</Badge>
+                      )}
+                      {a.source_url && a.verified_at ? (
+                        <Badge tone="green" className="max-w-full truncate">
+                          ✓ verified {new Date(a.verified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        </Badge>
+                      ) : (
+                        strictTenant && <Badge tone="amber">needs source & date</Badge>
                       )}
                       {a.tags.map((t) => (
                         <Badge key={t}>{t}</Badge>

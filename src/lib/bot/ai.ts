@@ -24,40 +24,75 @@ export function claude(): Anthropic | null {
 const INLINE_KB_CHARS = 30_000;
 
 const kbCache = new Map<string, { at: number; articles: KbArticle[]; inline: boolean }>();
-async function knowledgeBase(mvnoId: string) {
-  const hit = kbCache.get(mvnoId);
+/** Strict tenants only ever see articles with a source page and a verified date. */
+const sourced = (a: KbArticle) => !!a.source_url && !!a.verified_at;
+async function knowledgeBase(mvnoId: string, strict = false) {
+  const key = `${mvnoId}:${strict}`;
+  const hit = kbCache.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit;
-  const { data } = await supabaseAdmin().from("kb_articles").select("id,title,body,tags").eq("mvno_id", mvnoId).order("title").limit(2000);
-  const articles = (data ?? []) as KbArticle[];
+  const { data } = await supabaseAdmin().from("kb_articles").select("id,title,body,tags,source_url,verified_at").eq("mvno_id", mvnoId).order("title").limit(2000);
+  const articles = ((data ?? []) as KbArticle[]).filter((a) => !strict || sourced(a));
   const size = articles.reduce((n, a) => n + a.title.length + a.body.length, 0);
   const entry = { at: Date.now(), articles: size <= INLINE_KB_CHARS ? articles : [], inline: size <= INLINE_KB_CHARS };
-  kbCache.set(mvnoId, entry);
+  kbCache.set(key, entry);
   return entry;
 }
 
-async function retrieveKb(mvnoId: string, history: Message[]) {
+async function retrieveKb(mvnoId: string, history: Message[], strict = false) {
   const query = history
     .filter((m) => m.direction === "in" && m.body)
     .slice(-3)
     .map((m) => m.body)
     .join(" ");
   if (!query.trim()) return [];
-  const { data } = await supabaseAdmin().rpc("search_kb", { p_mvno: mvnoId, p_query: query, p_limit: 8 });
-  return (data ?? []) as KbArticle[];
+  const { data } = await supabaseAdmin().rpc("search_kb", { p_mvno: mvnoId, p_query: query, p_limit: strict ? 16 : 8 });
+  return ((data ?? []) as KbArticle[]).filter((a) => !strict || sourced(a)).slice(0, 8);
 }
 
-const formatKb = (articles: Pick<KbArticle, "title" | "body">[]) => articles.map((a) => `## ${a.title}\n${a.body}`).join("\n\n");
+const formatKb = (articles: KbArticle[], withIds = false) =>
+  articles.map((a) => (withIds ? `## [${a.id}] ${a.title}\n${a.body}` : `## ${a.title}\n${a.body}`)).join("\n\n");
 
 /** Volatile per-turn context: customer facts plus retrieved articles when the KB is large. */
 async function turnContext(mvno: Mvno, contact: Contact, history: Message[]) {
-  const kb = await knowledgeBase(mvno.id);
+  const strict = !!mvno.strict_sources;
+  const kb = await knowledgeBase(mvno.id, strict);
   if (kb.inline) return customerContext(mvno, contact);
-  const found = await retrieveKb(mvno.id, history);
-  return `${customerContext(mvno, contact)}\n\nRelevant knowledge base articles for this conversation:\n${found.length ? formatKb(found) : "(none matched: if unsure, hand over to an agent)"}`;
+  const found = await retrieveKb(mvno.id, history, strict);
+  return `${customerContext(mvno, contact)}\n\nRelevant knowledge base articles for this conversation:\n${found.length ? formatKb(found, strict) : "(none matched: if unsure, hand over to an agent)"}`;
+}
+
+/** System prompt for tenants that aren't mobile networks (e.g. an embassy). */
+async function generalSystem(mvno: Mvno) {
+  const strict = !!mvno.strict_sources;
+  const kb = await knowledgeBase(mvno.id, strict);
+  return `You are ${mvno.bot_name}, the WhatsApp assistant for ${mvno.name}.
+Brand voice: ${mvno.bot_persona}
+
+How to reply:
+- This is WhatsApp. Keep replies short (1–4 short lines), friendly, calm and specific. Use *bold* sparingly, no markdown headings or tables.
+- Reply in the customer's language if they write in one other than English.
+- Answer only from the knowledge base. Never make up requirements, fees, timelines, procedures, addresses or links.
+${
+    strict
+      ? `- SOURCED ANSWERS ONLY. Every factual answer (requirements, fees, steps, dates, places, links) MUST be sent with the answer_from_kb tool, naming the ONE article it comes from (its id in [brackets]). The system adds the source link and "last verified" date itself: never write sources, links or dates of verification yourself. Never state facts in plain text.
+- If no article covers the question, say briefly that you can't confirm that from official information, and offer an officer (call handoff_to_agent if they want one). Never guess.
+- Plain text is only for greetings, one short clarifying question, and acknowledgements.`
+      : `- If the knowledge base doesn't cover the question, say so and offer an officer (handoff_to_agent). Never guess.`
+  }
+- Appointments: call request_appointment (it collects the details and creates a request an officer confirms). Never promise a date or time yourself.
+- Emergencies (someone in danger, arrested, injured, in hospital, lost or stolen documents while travelling, any urgent safety issue): call emergency_help immediately.
+- Office address or opening hours: call show_offices.
+- Wanting a person, complaints, or anything you can't answer from the knowledge base: call handoff_to_agent.
+- Never ask for passwords or PINs. Don't ask for full ID or passport numbers unless an article says they're needed.
+- Ending a chat: only when the customer says they're done (thanks, that's all, bye), call resolve_conversation and write NO goodbye yourself: the system sends the closing message ("${closingOf(mvno)}"). Never close while the customer is waiting on us; end with the next step instead.
+- Customers may send photos or PDFs (e.g. a document or a receipt); read them and help, or hand to an officer.
+
+${kb.inline ? `Knowledge base${strict ? " (each article's id is in [brackets])" : ""}:\n${formatKb(kb.articles, strict) || "(empty: hand questions to an officer)"}` : "Knowledge base: the most relevant articles are provided with each turn below."}`;
 }
 
 /** Stable per-MVNO system prompt: identical bytes across requests so it caches. */
 async function stableSystem(mvno: Mvno) {
+  if (mvno.kind === "general") return generalSystem(mvno);
   const kb = await knowledgeBase(mvno.id);
   return `You are ${mvno.bot_name}, the WhatsApp customer care assistant for ${mvno.name}, a mobile network (MVNO).
 Brand voice: ${mvno.bot_persona}
@@ -322,12 +357,7 @@ export async function runAgent(mvno: Mvno, contact: Contact, history: Message[],
       { type: "text", text: await stableSystem(mvno), cache_control: { type: "ephemeral" } },
       { type: "text", text: await turnContext(mvno, contact, history) },
     ],
-    tools: BOT_TOOLS.filter(
-      (t) =>
-        (mvno.sim_delivery || t.name !== "track_or_order_delivery") &&
-        // No billing connection: the bot can't read accounts, so don't let it offer to.
-        (hasRealBilling(mvno.slug) || (t.name !== "check_balance" && t.name !== "check_line_status")),
-    ),
+    tools: toolsFor(mvno),
     tool_choice: { type: "auto" },
     messages,
   });
@@ -346,6 +376,58 @@ export async function runAgent(mvno: Mvno, contact: Contact, history: Message[],
     .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
     .map((b) => ({ name: b.name, input: (b.input ?? {}) as Record<string, unknown> }));
   return { text, tools };
+}
+
+// ------------------------------------------------------------------ tools for general tenants
+
+const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
+  {
+    name: "request_appointment",
+    description: "Start an appointment request: the bot asks for the service, preferred dates and full name, then creates a ticket an officer confirms.",
+    input_schema: { type: "object", properties: { service: { type: "string", description: "The service if the customer already said it, else empty string." } }, required: ["service"], additionalProperties: false },
+    strict: true,
+  },
+  {
+    name: "emergency_help",
+    description: "Urgent help: sends the emergency contact details immediately and alerts the duty officers. Use for anyone in danger, arrested, injured, in hospital, or with lost/stolen documents while travelling.",
+    input_schema: { type: "object", properties: { summary: { type: "string", description: "One line: what happened and where, from what the customer said." } }, required: ["summary"], additionalProperties: false },
+    strict: true,
+  },
+  {
+    name: "show_offices",
+    description: "Send the office address(es), opening hours, phone and a map pin.",
+    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    strict: true,
+  },
+];
+
+const ANSWER_FROM_KB: Anthropic.Beta.BetaTool = {
+  name: "answer_from_kb",
+  description: "Send a factual answer taken from ONE knowledge base article. The system appends that article's source link and last-verified date.",
+  input_schema: {
+    type: "object",
+    properties: {
+      article_id: { type: "string", description: "The id in [brackets] of the article the answer comes from." },
+      answer: { type: "string", description: "The answer for WhatsApp (1–6 short lines), using only facts from that article. No sources or dates." },
+    },
+    required: ["article_id", "answer"],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+
+/** Tools a tenant's bot may use. */
+function toolsFor(mvno: Mvno) {
+  if (mvno.kind === "general") {
+    const keep = new Set(["show_main_menu", "handoff_to_agent", "resolve_conversation"]);
+    return [...BOT_TOOLS.filter((t) => keep.has(t.name)), ...GENERAL_EXTRA_TOOLS, ...(mvno.strict_sources ? [ANSWER_FROM_KB] : [])];
+  }
+  return BOT_TOOLS.filter(
+    (t) =>
+      (mvno.sim_delivery || t.name !== "track_or_order_delivery") &&
+      // No billing connection: the bot can't read accounts, so don't let it offer to.
+      (hasRealBilling(mvno.slug) || (t.name !== "check_balance" && t.name !== "check_line_status")),
+  );
 }
 
 // ------------------------------------------------------------------ agent assist

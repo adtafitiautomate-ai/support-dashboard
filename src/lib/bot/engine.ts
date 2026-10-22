@@ -24,6 +24,9 @@ import { allow, LIMITS } from "@/lib/security";
 import { runAgent, triage } from "./ai";
 import { closingOf } from "@/lib/format";
 import { mediaForAi } from "@/lib/whatsapp/media";
+import type { MenuAction } from "@/lib/menu";
+import { notifyUsers } from "@/lib/user-notify";
+import { appUrl, renderEmail, sendMail } from "@/lib/mail";
 
 /** Entry point for every inbound WhatsApp message, from Meta or the simulator. */
 export async function processInbound(mvno: Mvno, msg: InboundMessage) {
@@ -147,7 +150,7 @@ async function respond(ctx: F.FlowCtx, msg: InboundMessage) {
   }
 }
 
-async function doHandoff(ctx: F.FlowCtx, input: { reason: string; priority?: Priority; category?: string }) {
+async function doHandoff(ctx: F.FlowCtx, input: { reason: string; priority?: Priority; category?: string; quiet?: boolean }) {
   const conv = await handoff(ctx.mvno, ctx.conv, ctx.contact, input);
   ctx.conv = conv;
   // Triage after the customer has been acknowledged, so it never delays the reply.
@@ -210,6 +213,21 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         return F.askTxnId(ctx, (a in F.TXN_TYPES ? a : "other") as F.TxnType);
       case "near":
         return findNearest(ctx, a === "store" || a === "agent" ? a : undefined);
+      case "gm": {
+        // General tenant menu. "answer" items fall through to the AI with the row title as the question.
+        const item = F.generalMenuItem(ctx.mvno, a);
+        if (!item) return F.showMenu(ctx);
+        if (item.action === "answer") break;
+        return generalAction(ctx, item.action, item.title);
+      }
+      case "appt": {
+        const item = a === "other" ? null : F.generalMenuItem(ctx.mvno, a);
+        if (!item) {
+          await updateConversation(ctx.conv.id, { bot_state: { flow: "appt", awaiting: "appt_service", data: {} } });
+          return F.say(ctx, { type: "text", text: "Which service is the appointment for? Type it in a few words." });
+        }
+        return F.askAppointmentDates(ctx, item.title);
+      }
       case "lost": // lost:this | lost:block:<both|line|none>
         if (a === "this") return F.askLostBlock(ctx, ctx.contact.wa_id);
         if (a === "block" && typeof state.data?.msisdn === "string") return finishLostLine(ctx, state.data.msisdn, b === "both" || b === "line" || b === "none" ? b : "both");
@@ -221,6 +239,12 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   if (state.awaiting === "txn" && text && !isEscape(text)) {
     const type = ((state.data?.txnType as string) in F.TXN_TYPES ? state.data?.txnType : "other") as F.TxnType;
     return finishFailedTxn(ctx, /^(skip|no|sina|sirina)$/i.test(text) ? null : text.slice(0, 120), type);
+  }
+  if (state.flow === "appt" && text && !isEscape(text)) {
+    const d = (state.data ?? {}) as { service?: string; dates?: string };
+    if (state.awaiting === "appt_service") return F.askAppointmentDates(ctx, text.slice(0, 100));
+    if (state.awaiting === "appt_dates" && d.service) return F.askAppointmentName(ctx, d.service, text.slice(0, 200));
+    if (state.awaiting === "appt_name" && d.service && d.dates) return finishAppointment(ctx, d.service, d.dates, text.slice(0, 120));
   }
   if (state.awaiting === "lost_number" && text && !isEscape(text)) {
     const msisdn = F.normalizeMsisdn(text);
@@ -311,7 +335,18 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   });
   if (!turn) return keywordFallback(ctx, text);
 
-  if (turn.text) await F.say(ctx, { type: "text", text: turn.text });
+  const cited = turn.tools.some((t) => ["answer_from_kb", "handoff_to_agent", "resolve_conversation", "request_appointment", "emergency_help", "show_offices", "show_main_menu"].includes(t.name));
+  if (ctx.mvno.strict_sources && turn.text && !cited && turn.text.length > 220) {
+    // Sourced answers only: a long factual-looking reply with no cited article is not sent.
+    await F.say(ctx, {
+      type: "buttons",
+      body: "I can't confirm that from our official information. An officer can help you with it.",
+      buttons: [
+        { id: "menu:human", title: "Talk to an officer" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+  } else if (turn.text) await F.say(ctx, { type: "text", text: turn.text });
   for (const t of turn.tools) await runTool(ctx, t.name, t.input);
   if (!turn.text && !turn.tools.length) await F.showMenu(ctx);
 
@@ -370,6 +405,16 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     }
     case "resolve_conversation":
       return botResolve(ctx, String(input.summary ?? ""), String(input.category ?? "inquiry"));
+    case "request_appointment": {
+      const service = String(input.service ?? "").trim();
+      return service ? F.askAppointmentDates(ctx, service.slice(0, 100)) : F.askAppointmentService(ctx);
+    }
+    case "emergency_help":
+      return emergencyHelp(ctx, String(input.summary ?? ""));
+    case "show_offices":
+      return generalAction(ctx, "location", "Office hours & location");
+    case "answer_from_kb":
+      return answerFromKb(ctx, String(input.article_id ?? ""), String(input.answer ?? ""));
     case "sim_replacement_help":
       return F.showSimLoss(ctx);
     case "report_lost_or_stolen": {
@@ -556,6 +601,12 @@ function greetingReply(greeting: string, text: string) {
 /** Used when no Claude API key is configured. */
 async function keywordFallback(ctx: F.FlowCtx, text: string) {
   const t = text.toLowerCase();
+  if (ctx.mvno.kind === "general") {
+    if (/^(thanks|thank you|thank u|thx|that'?s all|bye)\b/.test(t)) return botResolve(ctx, "", "inquiry");
+    if (/emergenc|danger|arrested|hospital|stolen passport|lost passport/.test(t)) return emergencyHelp(ctx, text.slice(0, 120));
+    if (/appointment|book/.test(t)) return F.askAppointmentService(ctx);
+    return F.showMenu(ctx, "I didn't quite catch that. Pick an option below, or ask to talk to an officer.");
+  }
   if (/^(thanks|thank you|thank u|thx|asante|webale|mwebale|ok thanks|that'?s all|bye)\b/.test(t)) return botResolve(ctx, "", "inquiry");
   if (/fail|deduct|not received|haven.?t received|didn.?t (get|receive|go|reach)|not (credited|reflect)|stuck|pending|charged|reverse|refund|wrong number|sent to the wrong|bill.*(not|fail)|withdraw.*(not|fail)|deposit.*(not|fail)/.test(t))
     return F.startFailedTxn(ctx);
@@ -578,4 +629,87 @@ async function keywordFallback(ctx: F.FlowCtx, text: string) {
   if (/deliver|sim card|order|track/.test(t)) return F.showDeliveries(ctx);
   if (/line|network|signal|suspend/.test(t)) return F.showLineStatus(ctx);
   return F.showMenu(ctx, "I can help with these. Pick one, or choose *Talk to an agent* 👇");
+}
+
+// ------------------------------------------------------------------ general tenants
+
+/** Menu actions for general tenants (other than "answer", which goes to the AI). */
+async function generalAction(ctx: F.FlowCtx, action: MenuAction, title: string) {
+  switch (action) {
+    case "appointment":
+      return F.askAppointmentService(ctx);
+    case "location":
+      if (await F.showOffices(ctx)) return;
+      return aiTopic(ctx, title); // no offices in Locations: answer from the knowledge base
+    case "emergency":
+      return emergencyHelp(ctx, "Customer chose Emergency help");
+    case "human":
+      return doHandoff(ctx, { reason: "Customer asked to talk to an officer", priority: "normal" });
+    default:
+      return aiTopic(ctx, title);
+  }
+}
+
+/** Lets the AI answer a menu topic as if the customer had typed it. */
+async function aiTopic(ctx: F.FlowCtx, title: string) {
+  return F.say(ctx, { type: "text", text: `What would you like to know about *${title}*? Type your question.` });
+}
+
+/** Emergency: contact details at once, urgent ticket, and every supervisor/admin alerted (even after hours). */
+async function emergencyHelp(ctx: F.FlowCtx, summary: string) {
+  await F.say(ctx, {
+    type: "text",
+    text:
+      (ctx.mvno.emergency_message?.trim() || "🚨 If you or someone else is in immediate danger, contact the local emergency services now.") +
+      "\n\nWe've alerted our duty officers. Tell us here what happened and where you are, and an officer will contact you as soon as possible.",
+  });
+  await doHandoff(ctx, { reason: `EMERGENCY: ${summary || "customer asked for emergency help"}`, priority: "urgent", category: "emergency", quiet: true });
+  await updateConversation(ctx.conv.id, { subject: `Emergency: ${(summary || "help requested").slice(0, 60)}` }).catch(() => undefined);
+  const { data: staff } = await supabaseAdmin().from("mvno_members").select("user_id").eq("mvno_id", ctx.mvno.id).in("role", ["supervisor", "admin"]);
+  const who = ctx.contact.name || `+${ctx.contact.wa_id}`;
+  await notifyUsers((staff ?? []).map((s) => s.user_id), {
+    mvnoId: ctx.mvno.id,
+    mvnoName: ctx.mvno.name,
+    conversationId: ctx.conv.id,
+    kind: "reminder_supervisor",
+    title: `🚨 Emergency: ${who} needs urgent help`,
+    body: summary || "Customer chose Emergency help",
+    link: `${appUrl()}/inbox?c=${ctx.conv.id}`,
+    footer: "Sent because a customer asked for emergency help in Tuongee.",
+  });
+  if (ctx.mvno.alert_emails?.length) {
+    await sendMail(
+      ctx.mvno.alert_emails,
+      `[${ctx.mvno.name}] 🚨 Emergency: ${who}`,
+      renderEmail({ title: `Emergency: ${who} needs urgent help`, intro: summary || "Customer chose Emergency help", cta: { label: "Open the chat", url: `${appUrl()}/inbox?c=${ctx.conv.id}` } }),
+    );
+  }
+}
+
+/** Appointment request → ticket with the details, for an officer to confirm. */
+async function finishAppointment(ctx: F.FlowCtx, service: string, dates: string, name: string) {
+  await F.say(ctx, {
+    type: "text",
+    text: `Thank you, ${name.split(" ")[0]}. Your appointment request is sent:\n\n• Service: *${service}*\n• Preferred: ${dates}\n\nAn officer will confirm your date and time here. Please don't come in until it's confirmed.`,
+  });
+  await doHandoff(ctx, { reason: `Appointment request: ${service}`, priority: "normal", category: "appointment", quiet: true });
+  await updateConversation(ctx.conv.id, { subject: `Appointment: ${service}`.slice(0, 80), bot_state: {} }).catch(() => undefined);
+  await addBotNote(ctx.conv, `📅 Appointment request\nService: ${service}\nPreferred: ${dates}\nName: ${name}\nWhatsApp: +${ctx.contact.wa_id}\n\nConfirm a date and time with the customer here, then resolve the ticket.`);
+}
+
+/** Strict tenants: a factual answer from ONE article, with its source and last-verified date added by us. */
+async function answerFromKb(ctx: F.FlowCtx, articleId: string, answer: string) {
+  const { data: a } = await supabaseAdmin().from("kb_articles").select("source_url, verified_at, mvno_id").eq("id", articleId).maybeSingle();
+  if (!a || a.mvno_id !== ctx.mvno.id || !a.source_url || !a.verified_at || !answer.trim()) {
+    return F.say(ctx, {
+      type: "buttons",
+      body: "I can't confirm that from our official information. An officer can help you with it.",
+      buttons: [
+        { id: "menu:human", title: "Talk to an officer" },
+        { id: "menu:main", title: "Main menu" },
+      ],
+    });
+  }
+  const verified = new Date(a.verified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return F.say(ctx, { type: "text", text: `${answer.trim()}\n\n🔗 Source: ${a.source_url}\n✅ Last verified: ${verified}`, previewUrl: false });
 }

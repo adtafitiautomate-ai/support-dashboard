@@ -53,6 +53,7 @@ export async function ingestSource(sourceId: string, mvnoId: string, input: Sour
         title: a.title.slice(0, 200),
         body: a.body,
         tags: a.tags.map((t) => t.toLowerCase().slice(0, 30)).slice(0, 4),
+        ...(input.kind === "url" ? { source_url: input.url, verified_at: new Date().toISOString().slice(0, 10) } : {}),
       })),
     );
     if (error) throw error;

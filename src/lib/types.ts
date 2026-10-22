@@ -23,6 +23,10 @@ export interface Mvno {
   wa_waba_id?: string | null; // WhatsApp Business Account (for message templates)
   closing_message?: string; // goodbye when a chat ends (no time-of-day greeting)
   sim_delivery?: boolean;
+  kind?: "telecom" | "general"; // general = not a mobile network (e.g. an embassy)
+  menu_items?: import("./menu").MenuItem[];
+  strict_sources?: boolean; // answers must cite a source page + last-verified date
+  emergency_message?: string | null;
   reminders_enabled?: boolean;
   remind_agent_mins?: number;
   remind_supervisor_mins?: number; // offers SIM/eSIM home delivery
@@ -81,7 +85,7 @@ export interface BotState {
   flow?: string;
   step?: string;
   data?: Record<string, unknown>;
-  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn" | "lost_number" | "lost_block";
+  awaiting?: "csat" | "location" | "address" | "msisdn" | "amount" | "txn" | "lost_number" | "lost_block" | "appt_service" | "appt_dates" | "appt_name";
   ai_turns?: number;
 }
 
@@ -207,4 +211,6 @@ export interface KbArticle {
   title: string;
   body: string;
   tags: string[];
+  source_url?: string | null; // official page the facts come from
+  verified_at?: string | null; // date someone last checked them (YYYY-MM-DD)
 }

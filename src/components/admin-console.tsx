@@ -440,7 +440,9 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
     balance: initial.ussd_codes?.balance ?? "",
     self_service: initial.ussd_codes?.self_service ?? "",
     promos: initial.ussd_codes?.promos ?? "",
+    kind: (initial.kind ?? "telecom") as "telecom" | "general",
   });
+  const telecom = f.kind === "telecom";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: k === "sla_first_response_mins" || k === "retention_days" ? Number(e.target.value) : e.target.value });
@@ -472,9 +474,23 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
   return (
     <Modal title={isNew ? "New tenant" : `Edit ${initial.name}`} onClose={onClose}>
       <form onSubmit={save} className="space-y-3">
+        <L label="Type" hint={telecom ? "Bundles, airtime, mobile money, USSD codes and SIM help." : "Your own menu (set in Settings), answers from the knowledge base, no telecom features. Sourced answers only by default."}>
+          <div className="grid grid-cols-2 rounded-xl bg-zinc-100 p-1 text-[13px] font-medium">
+            {(
+              [
+                ["telecom", "Mobile network"],
+                ["general", "General business"],
+              ] as const
+            ).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setF({ ...f, kind: k })} className={cx("rounded-lg py-1.5 transition", f.kind === k ? "bg-white shadow-sm" : "text-muted hover:text-ink")}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </L>
         <div className="grid grid-cols-[1fr_88px] gap-3">
           <L label="Brand name">
-            <input required className={field} value={f.name} onChange={set("name")} placeholder="e.g. SalamTel" />
+            <input required className={field} value={f.name} onChange={set("name")} placeholder={telecom ? "e.g. SalamTel" : "e.g. Embassy of …"} />
           </L>
           <L label="Colour">
             <input type="color" className="h-[38px] w-full rounded-xl border border-line bg-white" value={f.brand_color} onChange={set("brand_color")} />
@@ -491,6 +507,8 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
             <input type="number" min={1} className={field} value={f.sla_first_response_mins} onChange={set("sla_first_response_mins")} />
           </L>
         </div>
+        {telecom && (
+        <>
         <div className="grid grid-cols-2 gap-3">
           <L label="Mobile money name">
             <input className={field} value={f.wallet_name} onChange={set("wallet_name")} placeholder="e.g. SalamPay" />
@@ -510,16 +528,20 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
             <input className={field} value={f.promos} onChange={set("promos")} placeholder="*150#" />
           </L>
         </div>
+        </>
+        )}
         <L label="Other contact channels" hint="Shown by the bot, e.g. “Dial 100 (toll free) or email care@…”">
           <input className={field} value={f.care_line} onChange={set("care_line")} />
         </L>
         <L label="Greeting" hint={isNew ? "Leave empty for a default greeting" : undefined}>
           <input className={field} value={f.greeting} onChange={set("greeting")} />
         </L>
+        {telecom && (
         <L label="Finance emails" hint="Failed-transaction tickets are emailed here (comma-separated)">
           <input className={field} value={f.finance_emails} onChange={set("finance_emails")} placeholder="finance@company.com, recon@company.com" />
         </L>
-        <L label="Alert emails" hint="Customer waiting with no agent online; data deletion requests">
+        )}
+        <L label="Alert emails" hint={telecom ? "Customer waiting with no agent online; data deletion requests" : "Emergencies, customers waiting with no one online, data deletion requests"}>
           <input className={field} value={f.alert_emails} onChange={set("alert_emails")} placeholder="supervisors@company.com" />
         </L>
         <div className="grid grid-cols-[120px_1fr] gap-3">
