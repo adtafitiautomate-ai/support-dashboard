@@ -29,6 +29,7 @@ export interface Mvno {
   id_ready_template_name?: string | null;
   reminder_template_lang?: string; // goodbye when a chat ends (no time-of-day greeting)
   sim_delivery?: boolean;
+  vtiger_enabled?: boolean; // escalate to the shared vtiger CRM (off by default)
   kind?: "telecom" | "general"; // general = not a mobile network (e.g. an embassy)
   menu_items?: import("./menu").MenuItem[];
   strict_sources?: boolean; // answers must cite a source page + last-verified date

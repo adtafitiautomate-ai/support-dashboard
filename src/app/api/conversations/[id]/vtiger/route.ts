@@ -13,13 +13,12 @@ import { createVtigerTicket, suggestCategory, vtigerEnabled, vtigerOptions, vtig
 export async function GET(req: Request, ctx: RouteContext<"/api/conversations/[id]/vtiger">) {
   await connection();
   try {
-    if (!vtigerEnabled()) return Response.json({ enabled: false });
+    const { profile, conv: loaded, mvno } = await requireConversation((await ctx.params).id);
+    if (!vtigerEnabled(mvno)) return Response.json({ enabled: false });
     // ?quick=1: just "is vtiger available / already escalated?", instantly (no vtiger, no AI).
     if (new URL(req.url).searchParams.has("quick")) {
-      const { conv } = await requireConversation((await ctx.params).id);
-      return Response.json({ enabled: true, existing: conv.vtiger_ticket_id ? { no: conv.vtiger_ticket_no, url: vtigerRecordUrl(conv.vtiger_ticket_id) } : undefined });
+      return Response.json({ enabled: true, existing: loaded.vtiger_ticket_id ? { no: loaded.vtiger_ticket_no, url: vtigerRecordUrl(loaded.vtiger_ticket_id) } : undefined });
     }
-    const { profile, conv: loaded, mvno } = await requireConversation((await ctx.params).id);
     let conv = loaded;
     if (conv.vtiger_ticket_id) {
       return Response.json({ enabled: true, existing: { no: conv.vtiger_ticket_no, url: vtigerRecordUrl(conv.vtiger_ticket_id) } });
@@ -64,8 +63,8 @@ const Body = z.object({
 /** POST → creates ONE real vtiger ticket for this chat (never a second). */
 export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[id]/vtiger">) {
   try {
-    if (!vtigerEnabled()) throw new HttpError(400, "vtiger isn't set up");
     const { profile, conv, contact, mvno } = await requireConversation((await ctx.params).id);
+    if (!vtigerEnabled(mvno)) throw new HttpError(403, "vtiger escalation isn't available for this tenant");
     if (conv.vtiger_ticket_id) throw new HttpError(409, `This chat already has vtiger ticket ${conv.vtiger_ticket_no}`);
     const body = Body.parse(await req.json());
     await enforce(`escalate:${profile.id}`, LIMITS.escalate);

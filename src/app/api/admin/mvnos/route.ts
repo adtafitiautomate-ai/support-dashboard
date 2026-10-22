@@ -26,6 +26,7 @@ const Fields = z.object({
     .object({ balance: z.string().max(20).optional(), self_service: z.string().max(20).optional(), promos: z.string().max(20).optional() })
     .optional(),
   kind: z.enum(["telecom", "general"]).optional(),
+  vtiger_enabled: z.boolean().optional(),
   strict_sources: z.boolean().optional(),
   emergency_message: z.string().trim().max(1000).optional().nullable(),
 });

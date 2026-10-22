@@ -441,6 +441,7 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
     self_service: initial.ussd_codes?.self_service ?? "",
     promos: initial.ussd_codes?.promos ?? "",
     kind: (initial.kind ?? "telecom") as "telecom" | "general",
+    vtiger_enabled: initial.vtiger_enabled ?? false,
   });
   const telecom = f.kind === "telecom";
   const [busy, setBusy] = useState(false);
@@ -507,6 +508,13 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
             <input type="number" min={1} className={field} value={f.sla_first_response_mins} onChange={set("sla_first_response_mins")} />
           </L>
         </div>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5" checked={f.vtiger_enabled} onChange={(e) => setF({ ...f, vtiger_enabled: e.target.checked })} />
+          <span>
+            Escalate to vtiger
+            <span className="block text-xs text-muted">Agents can create tickets in the shared vtiger CRM. Leave off for independent tenants.</span>
+          </span>
+        </label>
         {telecom && (
         <>
         <div className="grid grid-cols-2 gap-3">

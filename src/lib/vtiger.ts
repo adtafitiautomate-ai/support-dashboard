@@ -11,7 +11,9 @@ const cfg = () => {
   const key = process.env.VTIGER_API_KEY;
   return url && user && key ? { endpoint: `${url}/webservice.php`, url, user, key } : null;
 };
-export const vtigerEnabled = () => !!cfg();
+/** vtiger is configured AND switched on for this tenant (Admin → tenant). Other tenants never see it. */
+export const vtigerConfigured = () => !!cfg();
+export const vtigerEnabled = (mvno: { vtiger_enabled?: boolean | null }) => !!cfg() && mvno.vtiger_enabled === true;
 export const vtigerRecordUrl = (id: string) => {
   const c = cfg();
   return c ? `${c.url}/index.php?module=HelpDesk&view=Detail&record=${id.split("x")[1]}` : null;
