@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { AlarmClock, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
+import { AlarmClock, CalendarCheck, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
 import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -74,12 +74,20 @@ function useAccess() {
     (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
   );
   const isAdmin = useStore((s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && m.role === "admin"));
-  return { isSuper, isManager, isAdmin };
+  // Pages depend on the kinds of tenant this person works with (mobile network vs general business).
+  const hasGeneral = useStore((s) => [...s.mvnos.values()].some((m) => m.kind === "general"));
+  const hasTelecom = useStore((s) => [...s.mvnos.values()].some((m) => m.kind !== "general"));
+  return { isSuper, isManager, isAdmin, hasGeneral, hasTelecom };
 }
 
 /** Agents < supervisors (managers) < admins < super admins. */
-const canSee = (item: { managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean }, a: { isSuper: boolean; isManager: boolean; isAdmin: boolean }) =>
-  (!item.managersOnly || a.isManager) && (!item.adminsOnly || a.isAdmin) && (!item.superOnly || a.isSuper);
+type NavFlags = { managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean; generalOnly?: boolean; telecomOnly?: boolean };
+const canSee = (item: NavFlags, a: { isSuper: boolean; isManager: boolean; isAdmin: boolean; hasGeneral: boolean; hasTelecom: boolean }) =>
+  (!item.managersOnly || a.isManager) &&
+  (!item.adminsOnly || a.isAdmin) &&
+  (!item.superOnly || a.isSuper) &&
+  (!item.generalOnly || a.hasGeneral) &&
+  (!item.telecomOnly || a.hasTelecom);
 
 function Gate({ children }: { children: ReactNode }) {
   const { ready } = useWorkspace();
@@ -129,15 +137,16 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/tickets", label: "Tickets", icon: Ticket },
+  { href: "/appointments", label: "Appointments", icon: CalendarCheck, generalOnly: true },
   { href: "/dashboard", label: "Insights", icon: BarChart3, managersOnly: true },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/audience", label: "Audience", icon: Megaphone, managersOnly: true },
+  { href: "/audience", label: "Audience", icon: Megaphone, managersOnly: true, telecomOnly: true },
   { href: "/simulator", label: "Simulator", icon: Smartphone, adminsOnly: true },
   { href: "/settings", label: "Settings", icon: Settings, adminsOnly: true },
   { href: "/team", label: "Team", icon: Users, adminsOnly: true },
   { href: "/admin", label: "Admin", icon: ShieldCheck, superOnly: true },
-] as { href: string; label: string; icon: typeof Inbox; managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean }[];
+] as ({ href: string; label: string; icon: typeof Inbox } & NavFlags)[];
 
 function TopBar() {
   return (

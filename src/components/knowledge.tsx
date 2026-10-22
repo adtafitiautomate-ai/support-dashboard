@@ -33,6 +33,7 @@ export function KnowledgeView() {
   const mvnos = useStore((s) => [...s.mvnos.values()]);
   const [mvnoId, setMvnoId] = useState(mvnos[0]?.id ?? "");
   const strictTenant = !!mvnos.find((x) => x.id === mvnoId)?.strict_sources;
+  const generalTenant = mvnos.find((x) => x.id === mvnoId)?.kind === "general";
   const [sources, setSources] = useState<KbSource[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [filter, setFilter] = useState<string>("all"); // all | manual | <sourceId>
@@ -248,6 +249,7 @@ export function KnowledgeView() {
             <Button variant="primary" size="sm" className="rounded-full" onClick={() => setEditing({})}>
               <Plus className="size-3.5" /> Write article
             </Button>
+            {!generalTenant && (
             <Button
               size="sm"
               className="rounded-full"
@@ -265,6 +267,7 @@ export function KnowledgeView() {
             >
               {bundleImport === "busy" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Load bundles from articles
             </Button>
+            )}
             {bundleImport && bundleImport !== "busy" && <span className="basis-full text-xs text-muted">{bundleImport}</span>}
           </div>
 
@@ -356,7 +359,7 @@ export function KnowledgeView() {
         </section>
       </div>
 
-      <LocationsPanel key={mvnoId} mvnoId={mvnoId} />
+      <LocationsPanel key={mvnoId} mvnoId={mvnoId} offices={generalTenant} />
     </div>
   );
 }

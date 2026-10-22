@@ -12,7 +12,7 @@ const TEMPLATE =
   'PaxTel Service Centre – Wandegeya,service centre,Wandegeya Traffic Lights,Kampala,0.3317,32.5711,+256724000100,"Daily 8:00 AM – 8:00 PM",sim_swap;esim;mobile_money\n';
 
 /** Agent & service-centre directory: CSV import, search, delete. Powers "nearest agent" in the bot. */
-export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
+export function LocationsPanel({ mvnoId, offices = false }: { mvnoId: string; offices?: boolean }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<"add" | "replace">("add");
@@ -86,13 +86,12 @@ export function LocationsPanel({ mvnoId }: { mvnoId: string }) {
     <section className="card mt-4 p-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <MapPin className="size-4 text-muted" />
-        <h2 className="text-sm font-semibold">Agent & service centre locations</h2>
-        <span className="text-xs text-muted">
-          {counts.agents} agents · {counts.centres} service centres
-        </span>
+        <h2 className="text-sm font-semibold">{offices ? "Offices" : "Agent & service centre locations"}</h2>
+        <span className="text-xs text-muted">{offices ? `${counts.agents + counts.centres} offices` : `${counts.agents} agents · ${counts.centres} service centres`}</span>
         <p className="w-full text-xs text-muted">
-          When a customer asks for an agent, the bot asks them to share their WhatsApp location and recommends the 3 nearest. Agents handle top-ups and mobile money;
-          service centres handle SIM replacement, eSIM and devices.
+          {offices
+            ? "Shown when a customer taps “Office hours & location”: name, address, opening hours, phone, and a map pin if latitude/longitude are set."
+            : "When a customer asks for an agent, the bot asks them to share their WhatsApp location and recommends the 3 nearest. Agents handle top-ups and mobile money; service centres handle SIM replacement, eSIM and devices."}
         </p>
       </div>
 

@@ -19,7 +19,7 @@ export function AudienceView() {
   const now = useNow(60_000);
   const isSuper = useStore((s) => !!s.me?.is_platform_admin);
   const mvnos = useStore((s) =>
-    [...s.mvnos.values()].filter((m) => s.me?.is_platform_admin || s.memberships.some((x) => x.user_id === s.me?.id && x.mvno_id === m.id && x.role !== "agent")),
+    [...s.mvnos.values()].filter((m) => m.kind !== "general" && (s.me?.is_platform_admin || s.memberships.some((x) => x.user_id === s.me?.id && x.mvno_id === m.id && x.role !== "agent"))),
   );
   const adminOf = useStore((s) => new Set(s.memberships.filter((x) => x.user_id === s.me?.id && x.role === "admin").map((x) => x.mvno_id)));
   const [mvnoId, setMvnoId] = useState(mvnos[0]?.id ?? "");

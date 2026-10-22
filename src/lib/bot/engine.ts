@@ -694,7 +694,12 @@ async function finishAppointment(ctx: F.FlowCtx, service: string, dates: string,
   });
   await doHandoff(ctx, { reason: `Appointment request: ${service}`, priority: "normal", category: "appointment", quiet: true });
   await updateConversation(ctx.conv.id, { subject: `Appointment: ${service}`.slice(0, 80), bot_state: {} }).catch(() => undefined);
-  await addBotNote(ctx.conv, `📅 Appointment request\nService: ${service}\nPreferred: ${dates}\nName: ${name}\nWhatsApp: +${ctx.contact.wa_id}\n\nConfirm a date and time with the customer here, then resolve the ticket.`);
+  await addBotNote(ctx.conv, `📅 Appointment request\nService: ${service}\nPreferred: ${dates}\nName: ${name}\nWhatsApp: +${ctx.contact.wa_id}\n\nConfirm it on the Appointments page: the customer is messaged automatically.`);
+  // The Appointments page lists these for staff to confirm.
+  await supabaseAdmin()
+    .from("appointments")
+    .insert({ mvno_id: ctx.mvno.id, conversation_id: ctx.conv.id, contact_id: ctx.contact.id, service, preferred: dates, full_name: name })
+    .then(({ error }) => error && console.error("appointment", error.message));
 }
 
 /** Strict tenants: a factual answer from ONE article, with its source and last-verified date added by us. */
