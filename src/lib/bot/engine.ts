@@ -681,7 +681,7 @@ async function emergencyHelp(ctx: F.FlowCtx, summary: string) {
     await sendMail(
       ctx.mvno.alert_emails,
       `[${ctx.mvno.name}] 🚨 Emergency: ${who}`,
-      renderEmail({ title: `Emergency: ${who} needs urgent help`, intro: summary || "Customer chose Emergency help", cta: { label: "Open the chat", url: `${appUrl()}/inbox?c=${ctx.conv.id}` } }),
+      renderEmail({ brand: ctx.mvno, title: `Emergency: ${who} needs urgent help`, intro: summary || "Customer chose Emergency help", cta: { label: "Open the chat", url: `${appUrl()}/inbox?c=${ctx.conv.id}` } }),
     );
   }
 }

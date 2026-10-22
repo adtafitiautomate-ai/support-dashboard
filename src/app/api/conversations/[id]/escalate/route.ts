@@ -81,6 +81,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
       to,
       `[${mvno.name}] Escalation: ticket ${ref}${conv.subject ? ` · ${conv.subject.slice(0, 60)}` : ""}`,
       renderEmail({
+        brand: mvno,
         title: `Ticket ${ref} escalated to you`,
         intro: `${profile.full_name} needs your help with this customer case. Please reply to them or update the ticket once it's handled.`,
         rows,

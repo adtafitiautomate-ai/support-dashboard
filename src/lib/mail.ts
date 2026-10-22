@@ -49,13 +49,27 @@ async function transport() {
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** Simple, readable HTML email: title, key/value rows, optional button. */
-export function renderEmail(opts: { title: string; intro?: string; rows?: [string, string][]; cta?: { label: string; url: string }; footer?: string }) {
+export function renderEmail(opts: {
+  title: string;
+  intro?: string;
+  rows?: [string, string][];
+  cta?: { label: string; url: string };
+  footer?: string;
+  /** The tenant the email is sent for: its own logo replaces Tuongee's. */
+  brand?: { name: string; logo_url?: string | null } | null;
+}) {
   const rows = (opts.rows ?? [])
     .map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;color:#6b7280;white-space:nowrap;vertical-align:top">${esc(k)}</td><td style="padding:6px 0;color:#111827">${esc(v).replace(/\n/g, "<br>")}</td></tr>`)
     .join("");
   const html = `<!doctype html><html><body style="margin:0;background:#f4f5f5;font-family:Segoe UI,Arial,sans-serif">
 <div style="max-width:560px;margin:24px auto;background:#fff;border-radius:16px;padding:28px;border:1px solid #e5e7eb">
-<img src="${appUrl()}/logo.png" alt="Tuongee" width="96" height="76" style="display:block;margin-bottom:12px;border:0" />
+${
+    opts.brand?.logo_url
+      ? `<img src="${esc(opts.brand.logo_url)}" alt="${esc(opts.brand.name)}" height="56" style="display:block;height:56px;width:auto;max-width:220px;margin-bottom:12px;border:0" />`
+      : opts.brand
+        ? `<div style="font-size:18px;font-weight:600;color:#111827;margin-bottom:12px">${esc(opts.brand.name)}</div>`
+        : `<img src="${appUrl()}/logo.png" alt="Tuongee" width="96" height="76" style="display:block;margin-bottom:12px;border:0" />`
+  }
 <h1 style="font-size:20px;margin:0 0 12px;color:#111827">${esc(opts.title)}</h1>
 ${opts.intro ? `<p style="color:#374151;line-height:1.5;margin:0 0 16px">${esc(opts.intro)}</p>` : ""}
 ${rows ? `<table style="font-size:14px;border-collapse:collapse;margin-bottom:16px">${rows}</table>` : ""}

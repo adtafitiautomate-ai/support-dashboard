@@ -15,6 +15,7 @@ export async function notifyUsers(
   if (!ids.length) return;
   try {
     const db = supabaseAdmin();
+    const { data: brand } = await db.from("mvnos").select("name, logo_url").eq("id", n.mvnoId).maybeSingle();
     await db.from("notifications").insert(ids.map((id) => ({ user_id: id, mvno_id: n.mvnoId, conversation_id: n.conversationId, kind: n.kind, title: n.title, body: n.body ?? null })));
     await Promise.all(
       ids.map(async (id) => {
@@ -25,7 +26,7 @@ export async function notifyUsers(
         await sendMail(
           [to],
           `[${n.mvnoName}] ${n.title}`,
-          renderEmail({ title: n.title, intro: n.body, cta: { label: "Open the chat", url: n.link }, footer: n.footer }),
+          renderEmail({ brand, title: n.title, intro: n.body, cta: { label: "Open the chat", url: n.link }, footer: n.footer }),
         );
       }),
     );

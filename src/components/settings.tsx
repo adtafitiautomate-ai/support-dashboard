@@ -55,6 +55,7 @@ export function SettingsView() {
           ))}
         </div>
         {mvno && tab === "bot" && mvno.kind === "general" && <GeneralSettings key={`g-${mvno.id}`} mvno={mvno} />}
+        {mvno && tab === "bot" && <BrandingSettings key={`b-${mvno.id}`} mvno={mvno} />}
         {mvno && tab === "bot" && <BotSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "whatsapp" && <WhatsAppSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "canned" && <CannedSettings key={mvno.id} mvno={mvno} />}
@@ -523,5 +524,78 @@ function GeneralSettings({ mvno }: { mvno: Mvno }) {
         <SaveMsg msg={saver.msg} />
       </div>
     </form>
+  );
+}
+
+/** The tenant's own logo, shown on emails sent on its behalf. */
+function BrandingSettings({ mvno }: { mvno: Mvno }) {
+  const [logo, setLogo] = useState<string | null>(mvno.logo_url ?? null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function upload(file: File) {
+    if (!["image/png", "image/jpeg"].includes(file.type)) return setMsg({ ok: false, text: "Use a PNG or JPG image (PNG with a transparent background looks best)." });
+    if (file.size > 1024 * 1024) return setMsg({ ok: false, text: "The logo must be under 1 MB." });
+    setBusy(true);
+    setMsg(null);
+    try {
+      const up = await api<{ path: string; token: string }>("/api/settings/logo", { action: "upload", mvnoId: mvno.id, mime: file.type, size: file.size });
+      const { error } = await supabaseBrowser().storage.from("branding").uploadToSignedUrl(up.path, up.token, file, { contentType: file.type });
+      if (error) throw new Error(error.message);
+      const r = await api<{ logo_url: string }>("/api/settings/logo", { action: "save", mvnoId: mvno.id, path: up.path });
+      setLogo(r.logo_url);
+      patch((s) => s.mvnos.set(mvno.id, { ...mvno, logo_url: r.logo_url }));
+      setMsg({ ok: true, text: "Logo saved" });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove() {
+    setBusy(true);
+    await api("/api/settings/logo", { action: "remove", mvnoId: mvno.id }).catch(() => undefined);
+    setLogo(null);
+    patch((s) => s.mvnos.set(mvno.id, { ...mvno, logo_url: null }));
+    setBusy(false);
+  }
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-4 card p-5">
+      <div className="grid h-16 w-40 place-items-center rounded-xl bg-white ring-1 ring-black/5">
+        {logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logo} alt={`${mvno.name} logo`} className="max-h-12 max-w-36 object-contain" />
+        ) : (
+          <span className="text-xs text-muted">No logo</span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">Logo</div>
+        <p className="text-xs text-muted">Shown at the top of emails sent for {mvno.name} (alerts, reminders, escalations, appointments). PNG or JPG under 1 MB; a wide logo with a transparent background works best.</p>
+        {msg && <p className={cx("mt-1 text-xs", msg.ok ? "text-accent" : "text-danger")}>{msg.text}</p>}
+      </div>
+      <div className="flex items-center gap-2">
+        <label className={cx("cursor-pointer rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white", busy && "opacity-50")}>
+          {busy ? "Saving…" : logo ? "Replace" : "Upload logo"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void upload(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {logo && (
+          <Button type="button" variant="ghost" size="sm" onClick={remove} disabled={busy}>
+            Remove
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

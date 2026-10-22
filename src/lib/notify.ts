@@ -5,7 +5,7 @@ import type { Contact, Conversation, Mvno } from "@/lib/types";
 
 // Event → email. Each MVNO chooses recipients in Admin (finance_emails / alert_emails).
 
-type M = Pick<Mvno, "name"> & { finance_emails?: string[]; alert_emails?: string[] };
+type M = Pick<Mvno, "name"> & { finance_emails?: string[]; alert_emails?: string[]; logo_url?: string | null };
 const ticketUrl = (conv: Pick<Conversation, "id">) => `${appUrl()}/tickets?t=${conv.id}`;
 
 export async function notifyFailedTransaction(
@@ -20,6 +20,7 @@ export async function notifyFailedTransaction(
     to,
     `[${mvno.name}] Failed ${t.type} · ticket #${conv.ticket_no ?? "–"}`,
     renderEmail({
+      brand: mvno,
       title: `Failed ${t.type} to verify`,
       intro: `A customer reported a failed ${t.type} on WhatsApp. Please verify in the billing / mobile money system, then resolve the ticket.`,
       rows: [
@@ -40,6 +41,7 @@ export async function notifyWaitingNoAgent(mvno: M, conv: Pick<Conversation, "id
     mvno.alert_emails,
     `[${mvno.name}] Customer waiting, no agent online · #${conv.ticket_no ?? "–"}`,
     renderEmail({
+      brand: mvno,
       title: "A customer is waiting and no agent is online",
       intro: "The bot handed this chat to the team, but nobody was online to take it.",
       rows: [
@@ -58,6 +60,7 @@ export async function notifyDeletionRequest(mvno: M, conv: Pick<Conversation, "i
     mvno.alert_emails,
     `[${mvno.name}] Data deletion request · #${conv.ticket_no ?? "–"}`,
     renderEmail({
+      brand: mvno,
       title: "Customer asked to delete their data",
       intro: "Verify the customer's identity, then use Erase customer data in the inbox (History tab). Respond within the legal time limit.",
       rows: [
