@@ -9,7 +9,7 @@ import { contactEmailOf } from "@/lib/credentials-mail";
  */
 export async function notifyUsers(
   userIds: string[],
-  n: { mvnoId: string; mvnoName: string; conversationId: string; kind: string; title: string; body?: string; link: string; footer?: string },
+  n: { mvnoId: string; mvnoName: string; conversationId: string | null; kind: string; title: string; body?: string; link: string; footer?: string },
 ) {
   const ids = [...new Set(userIds)].filter(Boolean);
   if (!ids.length) return;

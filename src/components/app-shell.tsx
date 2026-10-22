@@ -294,10 +294,11 @@ function Notifications() {
     return () => (clearTimeout(show), clearTimeout(hide));
   }, [notifications]);
 
-  const go = (conversationId: string | null) => {
+  const go = (conversationId: string | null, kind?: string) => {
     setOpen(false);
     setToast(null);
-    if (conversationId) router.push(`/inbox?c=${conversationId}`);
+    if (kind === "agenda") router.push("/appointments");
+    else if (conversationId) router.push(`/inbox?c=${conversationId}`);
   };
 
   return (
@@ -323,7 +324,7 @@ function Notifications() {
             <>
               <div className="px-2.5 py-2 text-xs font-semibold tracking-wide text-muted uppercase">Alerts</div>
               {notifications.slice(0, 8).map((n) => (
-                <button key={n.id} onClick={() => go(n.conversation_id)} className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-surface-2">
+                <button key={n.id} onClick={() => go(n.conversation_id, n.kind)} className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-surface-2">
                   <span className={cx("mt-0.5 grid size-7 shrink-0 place-items-center rounded-full", n.kind === "assigned" ? "bg-sky-50 text-sky-700" : n.kind === "reminder_supervisor" ? "bg-red-50 text-danger" : "bg-amber-50 text-amber-700")}>
                     {n.kind === "assigned" ? <UserPlus className="size-3.5" /> : <AlarmClock className="size-3.5" />}
                   </span>
@@ -363,8 +364,8 @@ function Notifications() {
               <div className="text-sm font-semibold leading-snug">{toast.title}</div>
               {toast.body && <div className="mt-0.5 truncate text-xs text-muted">{toast.body}</div>}
               <div className="mt-2 flex gap-2">
-                <button onClick={() => go(toast.conversation_id)} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white">
-                  Open chat
+                <button onClick={() => go(toast.conversation_id, toast.kind)} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white">
+                  {toast.kind === "agenda" ? "Open appointments" : "Open chat"}
                 </button>
                 <button onClick={() => setToast(null)} className="rounded-full px-2.5 py-1 text-xs font-medium text-muted hover:bg-zinc-100">
                   Dismiss

@@ -71,7 +71,7 @@ ${
         : `<img src="${appUrl()}/logo.png" alt="Tuongee" width="96" height="76" style="display:block;margin-bottom:12px;border:0" />`
   }
 <h1 style="font-size:20px;margin:0 0 12px;color:#111827">${esc(opts.title)}</h1>
-${opts.intro ? `<p style="color:#374151;line-height:1.5;margin:0 0 16px">${esc(opts.intro)}</p>` : ""}
+${opts.intro ? `<p style="color:#374151;line-height:1.5;margin:0 0 16px">${esc(opts.intro).replace(/\n/g, "<br>")}</p>` : ""}
 ${rows ? `<table style="font-size:14px;border-collapse:collapse;margin-bottom:16px">${rows}</table>` : ""}
 ${opts.cta ? `<a href="${esc(opts.cta.url)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;font-size:14px">${esc(opts.cta.label)}</a>` : ""}
 <p style="color:#9ca3af;font-size:12px;margin:24px 0 0">${esc(opts.footer ?? "You receive this because your address is set for notifications in Tuongee.")}</p>

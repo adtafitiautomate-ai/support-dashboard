@@ -22,7 +22,11 @@ export interface Mvno {
   number_prefixes: string[];
   wa_waba_id?: string | null; // WhatsApp Business Account (for message templates)
   closing_message?: string;
-  logo_url?: string | null; // tenant's own logo for emails/exports // goodbye when a chat ends (no time-of-day greeting)
+  logo_url?: string | null; // tenant's own logo for emails/exports
+  google_calendar_id?: string | null;
+  appointment_minutes?: number;
+  reminder_template_name?: string | null;
+  reminder_template_lang?: string; // goodbye when a chat ends (no time-of-day greeting)
   sim_delivery?: boolean;
   kind?: "telecom" | "general"; // general = not a mobile network (e.g. an embassy)
   menu_items?: import("./menu").MenuItem[];

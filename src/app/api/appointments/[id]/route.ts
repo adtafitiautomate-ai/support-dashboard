@@ -3,6 +3,9 @@ import { errorResponse, HttpError, requireMvnoMember } from "@/lib/inbox/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent, sendMessage } from "@/lib/inbox/service";
 import { audit } from "@/lib/security";
+import { addAppointmentEvent, removeAppointmentEvent } from "@/lib/google-calendar";
+import { formatPhone } from "@/lib/format";
+import { appUrl } from "@/lib/mail";
 import type { Contact, Conversation } from "@/lib/types";
 
 const Body = z.discriminatedUnion("action", [
@@ -33,6 +36,34 @@ export async function POST(req: Request, ctx: RouteContext<"/api/appointments/[i
     const patch: Record<string, unknown> = { status, handled_by: profile.id, updated_at: new Date().toISOString() };
     if (body.action === "confirm") Object.assign(patch, { scheduled_at: body.scheduled_at, office: body.office || null, staff_note: body.note || null });
     if (body.action === "cancel" && body.note) patch.staff_note = body.note;
+    // Google Calendar: add on confirm, remove on cancel (the appointment is saved either way).
+    let calendarNote: string | null = null;
+    try {
+      if (body.action === "confirm") {
+        const { data: who } = appt.contact_id ? await db.from("contacts").select("name, wa_id").eq("id", appt.contact_id).maybeSingle() : { data: null };
+        const eventId = await addAppointmentEvent(appt.mvno_id, {
+          title: `${appt.full_name ?? who?.name ?? "Appointment"} · ${appt.service}`,
+          description: [
+            `Service: ${appt.service}`,
+            `Name: ${appt.full_name ?? who?.name ?? "–"}`,
+            who ? `WhatsApp: ${formatPhone(who.wa_id)}` : null,
+            body.note ? `Note to customer: ${body.note}` : null,
+            `Confirmed by ${profile.full_name} in Tuongee`,
+            appt.conversation_id ? `Chat: ${appUrl()}/inbox?c=${appt.conversation_id}` : null,
+          ].filter(Boolean).join("\n"),
+          location: body.office || null,
+          start: body.scheduled_at,
+          minutes: mvno.appointment_minutes ?? 30,
+          timeZone: mvno.business_hours?.tz ?? "Africa/Kampala",
+        });
+        if (eventId) patch.google_event_id = eventId;
+      } else if (body.action === "cancel" && appt.google_event_id) {
+        await removeAppointmentEvent(appt.mvno_id, appt.google_event_id);
+        patch.google_event_id = null;
+      }
+    } catch (e) {
+      calendarNote = `Google Calendar wasn't updated: ${(e as Error).message}`;
+    }
     const { error } = await db.from("appointments").update(patch).eq("id", id);
     if (error) throw error;
 
@@ -70,7 +101,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/appointments/[i
       }
     }
     await audit(profile, `appointment.${body.action}`, { mvnoId: appt.mvno_id, target: appt.full_name ?? appt.service, details: { when: when || null } });
-    return Response.json({ ok: true, messaged, warning });
+    return Response.json({ ok: true, messaged, warning: [warning, calendarNote].filter(Boolean).join(" ") || null, calendar: !!patch.google_event_id });
   } catch (e) {
     if (e instanceof z.ZodError) return Response.json({ error: e.issues[0]?.message ?? "Invalid input" }, { status: 400 });
     return errorResponse(e);

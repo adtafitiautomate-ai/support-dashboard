@@ -55,6 +55,7 @@ export function SettingsView() {
           ))}
         </div>
         {mvno && tab === "bot" && mvno.kind === "general" && <GeneralSettings key={`g-${mvno.id}`} mvno={mvno} />}
+        {mvno && tab === "bot" && mvno.kind === "general" && <CalendarSettings key={`c-${mvno.id}`} mvno={mvno} />}
         {mvno && tab === "bot" && <BrandingSettings key={`b-${mvno.id}`} mvno={mvno} />}
         {mvno && tab === "bot" && <BotSettings key={mvno.id} mvno={mvno} />}
         {mvno && tab === "whatsapp" && <WhatsAppSettings key={mvno.id} mvno={mvno} />}
@@ -597,5 +598,101 @@ function BrandingSettings({ mvno }: { mvno: Mvno }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Google Calendar for confirmed appointments, and WhatsApp reminders. */
+function CalendarSettings({ mvno }: { mvno: Mvno }) {
+  const [f, setF] = useState({
+    calendarId: mvno.google_calendar_id ?? "",
+    minutes: mvno.appointment_minutes ?? 30,
+    templateName: mvno.reminder_template_name ?? "",
+    templateLang: mvno.reminder_template_lang ?? "en",
+  });
+  const [keyJson, setKeyJson] = useState("");
+  const [sa, setSa] = useState<string | null>(null);
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
+  const saver = useSaver();
+  useEffect(() => {
+    void fetch(`/api/settings/calendar?mvno=${mvno.id}`)
+      .then((r) => r.json())
+      .then((j) => setSa(j.serviceAccount ?? null));
+  }, [mvno.id]);
+
+  return (
+    <form
+      className="mb-4 space-y-4 card p-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setTest(null);
+        void saver.run(async () => {
+          await api("/api/settings/calendar", { action: "save", mvnoId: mvno.id, calendarId: f.calendarId || null, minutes: f.minutes, templateName: f.templateName || null, templateLang: f.templateLang, serviceAccountJson: keyJson || undefined });
+          patch((s) => s.mvnos.set(mvno.id, { ...mvno, google_calendar_id: f.calendarId || null, appointment_minutes: f.minutes, reminder_template_name: f.templateName || null, reminder_template_lang: f.templateLang }));
+          if (keyJson) {
+            try {
+              setSa(JSON.parse(keyJson).client_email ?? sa);
+            } catch {
+              /* validated server-side */
+            }
+            setKeyJson("");
+          }
+        });
+      }}
+    >
+      <div>
+        <div className="text-sm font-medium">Google Calendar & reminders</div>
+        <p className="mt-0.5 text-xs text-muted">Confirmed appointments are added to this calendar (and removed if cancelled). Customers get a WhatsApp reminder 24 hours and 2 hours before; staff get a 7:00 agenda.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+        <Field label="Calendar ID" hint="Google Calendar → the calendar's Settings → Integrate calendar → Calendar ID">
+          <input className={input} value={f.calendarId} onChange={(e) => setF({ ...f, calendarId: e.target.value.trim() })} placeholder="…@group.calendar.google.com" />
+        </Field>
+        <Field label="Slot length (min)">
+          <input type="number" min={5} max={480} className={input} value={f.minutes} onChange={(e) => setF({ ...f, minutes: Math.max(5, Math.min(480, Number(e.target.value) || 30)) })} />
+        </Field>
+      </div>
+      <Field
+        label={`Service account key${sa ? " (connected)" : ""}`}
+        hint={sa ? `Connected as ${sa}. Upload a new .json key only to replace it.` : "Upload the .json key of a Google service account, then share the calendar with that account's email (\"Make changes to events\")."}
+      >
+        <input
+          type="file"
+          accept="application/json,.json"
+          className="block w-full text-sm"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (file) setKeyJson(await file.text());
+          }}
+        />
+        {keyJson && <span className="mt-1 block text-xs text-accent">Key file loaded: click Save to store it securely.</span>}
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+        <Field label="Reminder template (optional)" hint="An approved WhatsApp template used when the customer's 24-hour window has closed. Variables: {{1}} name, {{2}} service, {{3}} date & time, {{4}} place. Without it, reminders only go to customers who wrote in the last 24 hours.">
+          <input className={input} value={f.templateName} onChange={(e) => setF({ ...f, templateName: e.target.value.trim() })} placeholder="appointment_reminder" />
+        </Field>
+        <Field label="Language">
+          <input className={input} value={f.templateLang} onChange={(e) => setF({ ...f, templateLang: e.target.value.trim() })} placeholder="en" />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="primary">Save</Button>
+        <Button
+          type="button"
+          onClick={async () => {
+            setTest(null);
+            try {
+              const r = await api<{ name: string; timeZone: string }>("/api/settings/calendar", { action: "test", mvnoId: mvno.id });
+              setTest({ ok: true, text: `Connected to "${r.name}" (${r.timeZone})` });
+            } catch (err) {
+              setTest({ ok: false, text: (err as Error).message });
+            }
+          }}
+        >
+          Test connection
+        </Button>
+        <SaveMsg msg={saver.msg} />
+        {test && <span className={cx("text-sm", test.ok ? "text-accent" : "text-danger")}>{test.text}</span>}
+      </div>
+    </form>
   );
 }

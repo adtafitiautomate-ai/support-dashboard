@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { runReminders } from "@/lib/reminders";
+import { runAppointmentReminders } from "@/lib/appointment-reminders";
 
 export const maxDuration = 60;
 
@@ -10,5 +11,6 @@ export async function POST(req: Request) {
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
-  return Response.json({ ok: true, ...(await runReminders()) });
+  const [waiting, appointments] = await Promise.all([runReminders(), runAppointmentReminders().catch((e) => ({ error: String(e) }))]);
+  return Response.json({ ok: true, ...waiting, appointments });
 }
