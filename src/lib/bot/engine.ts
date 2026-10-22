@@ -21,7 +21,7 @@ import { notifyDeletionRequest, notifyFailedTransaction } from "@/lib/notify";
 import * as F from "./flows";
 import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { allow, LIMITS } from "@/lib/security";
-import { runAgent, triage } from "./ai";
+import { hasOffices, runAgent, triage } from "./ai";
 import { closingOf } from "@/lib/format";
 import { mediaForAi } from "@/lib/whatsapp/media";
 import type { MenuAction } from "@/lib/menu";
@@ -218,7 +218,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         // General tenant menu. "answer" items fall through to the AI with the row title as the question.
         const item = F.generalMenuItem(ctx.mvno, a);
         if (!item) return F.showMenu(ctx);
-        if (item.action === "answer") break;
+        if (item.action === "answer" || (item.action === "location" && !(await hasOffices(ctx.mvno.id)))) break;
         return generalAction(ctx, item.action, item.title);
       }
       case "appt": {
@@ -424,7 +424,15 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     case "emergency_help":
       return emergencyHelp(ctx, String(input.summary ?? ""));
     case "show_offices":
-      return generalAction(ctx, "location", "Office hours & location");
+      if (await F.showOffices(ctx)) return;
+      return F.say(ctx, {
+        type: "buttons",
+        body: "I don't have our office address and hours listed here. An officer can confirm them for you.",
+        buttons: [
+          { id: "menu:human", title: "Talk to an officer" },
+          { id: "menu:main", title: "Main menu" },
+        ],
+      });
     case "check_national_id": {
       const name = String(input.full_name ?? "").trim();
       return name ? checkNationalId(ctx, name.slice(0, 120)) : askIdName(ctx);

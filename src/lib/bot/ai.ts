@@ -361,7 +361,7 @@ export async function runAgent(mvno: Mvno, contact: Contact, history: Message[],
       { type: "text", text: await stableSystem(mvno), cache_control: { type: "ephemeral" } },
       { type: "text", text: await turnContext(mvno, contact, history) },
     ],
-    tools: toolsFor(mvno),
+    tools: toolsFor(mvno, await hasOffices(mvno.id)),
     tool_choice: { type: "auto" },
     messages,
   });
@@ -432,10 +432,22 @@ const ANSWER_FROM_KB: Anthropic.Beta.BetaTool = {
 };
 
 /** Tools a tenant's bot may use. */
-function toolsFor(mvno: Mvno) {
+const officesCache = new Map<string, { at: number; has: boolean }>();
+/** Whether the tenant lists any offices in Locations (cached for a minute). */
+export async function hasOffices(mvnoId: string) {
+  const hit = officesCache.get(mvnoId);
+  if (hit && Date.now() - hit.at < 60_000) return hit.has;
+  const { count } = await supabaseAdmin().from("outlets").select("id", { count: "exact", head: true }).eq("mvno_id", mvnoId);
+  officesCache.set(mvnoId, { at: Date.now(), has: !!count });
+  return !!count;
+}
+
+function toolsFor(mvno: Mvno, offices = true) {
   if (mvno.kind === "general") {
     const keep = new Set(["show_main_menu", "handoff_to_agent", "resolve_conversation"]);
-    return [...BOT_TOOLS.filter((t) => keep.has(t.name)), ...GENERAL_EXTRA_TOOLS, ...(mvno.strict_sources ? [ANSWER_FROM_KB] : [])];
+    // No offices in Locations: address and hours come from the knowledge base instead.
+    const extra = GENERAL_EXTRA_TOOLS.filter((t) => offices || t.name !== "show_offices");
+    return [...BOT_TOOLS.filter((t) => keep.has(t.name)), ...extra, ...(mvno.strict_sources ? [ANSWER_FROM_KB] : [])];
   }
   return BOT_TOOLS.filter(
     (t) =>
