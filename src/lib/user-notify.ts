@@ -27,6 +27,7 @@ export async function notifyUsers(
           [to],
           `[${n.mvnoName}] ${n.title}`,
           renderEmail({ brand, title: n.title, intro: n.body, cta: { label: "Open the chat", url: n.link }, footer: n.footer }),
+          { mvnoId: n.mvnoId },
         );
       }),
     );

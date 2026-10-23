@@ -5,7 +5,7 @@ import type { Contact, Conversation, Mvno } from "@/lib/types";
 
 // Event → email. Each MVNO chooses recipients in Admin (finance_emails / alert_emails).
 
-type M = Pick<Mvno, "name"> & { finance_emails?: string[]; alert_emails?: string[]; logo_url?: string | null };
+type M = Pick<Mvno, "id" | "name"> & { finance_emails?: string[]; alert_emails?: string[]; logo_url?: string | null };
 const ticketUrl = (conv: Pick<Conversation, "id">) => `${appUrl()}/tickets?t=${conv.id}`;
 
 export async function notifyFailedTransaction(
@@ -32,6 +32,7 @@ export async function notifyFailedTransaction(
       ],
       cta: { label: "Open ticket", url: ticketUrl(conv) },
     }),
+    { mvnoId: mvno.id },
   );
 }
 
@@ -51,6 +52,7 @@ export async function notifyWaitingNoAgent(mvno: M, conv: Pick<Conversation, "id
       ],
       cta: { label: "Open in Tuongee", url: ticketUrl(conv) },
     }),
+    { mvnoId: mvno.id },
   );
 }
 
@@ -69,5 +71,6 @@ export async function notifyDeletionRequest(mvno: M, conv: Pick<Conversation, "i
       ],
       cta: { label: "Open ticket", url: ticketUrl(conv) },
     }),
+    { mvnoId: mvno.id },
   );
 }

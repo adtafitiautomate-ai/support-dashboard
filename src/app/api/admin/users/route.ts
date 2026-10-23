@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         await db.from("profiles").upsert({ id, full_name: body.full_name, is_platform_admin: body.platform_admin });
         if (body.mvno_id) await db.from("mvno_members").upsert({ mvno_id: body.mvno_id, user_id: id, role: body.role });
         const mvnoName = body.mvno_id ? (await db.from("mvnos").select("name").eq("id", body.mvno_id).maybeSingle()).data?.name : undefined;
-        const mailError = await mailCredentials({ to: body.contact_email, name: body.full_name, login: data.user.email ?? body.email, password, kind: "welcome", mvnoName });
+        const mailError = await mailCredentials({ to: body.contact_email, name: body.full_name, login: data.user.email ?? body.email, password, kind: "welcome", mvnoName, mvnoId: body.mvno_id });
         await audit(me, "user.created", { target: body.full_name, mvnoId: body.mvno_id ?? null, details: { login: data.user.email, role: body.role, super_admin: body.platform_admin, emailed: !mailError } });
         return Response.json({ user_id: id, email: data.user.email, password, emailed_to: mailError ? null : body.contact_email, email_error: mailError });
       }
@@ -81,7 +81,9 @@ export async function POST(req: Request) {
         if (error) throw error;
         const name = await nameOf(body.user_id);
         const to = contactEmailOf(u.user);
-        const mailError = await mailCredentials({ to, name, login: u.user.email ?? "", password, kind: "reset" });
+        // A user of exactly one tenant hears from that tenant's mail server; others from the system one.
+        const { data: tenants } = await db.from("mvno_members").select("mvno_id").eq("user_id", body.user_id);
+        const mailError = await mailCredentials({ to, name, login: u.user.email ?? "", password, kind: "reset", mvnoId: tenants?.length === 1 ? tenants[0].mvno_id : null });
         await audit(me, "user.password_reset", { target: name, details: { emailed: !mailError } });
         return Response.json({ password, emailed_to: mailError ? null : to, email_error: mailError });
       }

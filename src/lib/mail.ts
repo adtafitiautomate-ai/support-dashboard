@@ -14,15 +14,22 @@ export interface SmtpSettings {
   updated_at: string;
 }
 
-let cache: { at: number; settings: SmtpSettings | null; transport: Transporter | null } | null = null;
+type Resolved = { at: number; settings: SmtpSettings | null; transport: Transporter | null; reason: string | null };
+const cache = new Map<string, Resolved>(); // "system" or a tenant id
 
 export async function getSmtpSettings(): Promise<SmtpSettings | null> {
   const { data } = await supabaseAdmin().rpc("get_smtp_settings");
   return (data as SmtpSettings | null) ?? null;
 }
 
+/** A tenant's own mail server (password included: server-only). */
+export async function getTenantSmtp(mvnoId: string): Promise<SmtpSettings | null> {
+  const { data } = await supabaseAdmin().rpc("get_tenant_smtp", { p_mvno: mvnoId });
+  return (data as SmtpSettings | null) ?? null;
+}
+
 export function forgetSmtp() {
-  cache = null;
+  cache.clear();
 }
 
 function buildTransport(s: SmtpSettings) {
@@ -38,12 +45,33 @@ function buildTransport(s: SmtpSettings) {
   });
 }
 
-async function transport() {
-  if (!cache || Date.now() - cache.at > 60_000) {
-    const settings = await getSmtpSettings();
-    cache = { at: Date.now(), settings, transport: settings?.enabled ? buildTransport(settings) : null };
+const resolvedFrom = (settings: SmtpSettings | null, missing: string): Omit<Resolved, "at"> => ({
+  settings,
+  transport: settings?.enabled ? buildTransport(settings) : null,
+  reason: !settings ? missing : !settings.enabled ? "Email is switched off" : null,
+});
+
+/**
+ * Which server sends for a tenant: its own; else the system server only if the tenant may share it
+ * (Admin → tenant → "Use the system email server"). Never another tenant's.
+ */
+async function transport(mvnoId?: string | null) {
+  const key = mvnoId ?? "system";
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit;
+  let r: Omit<Resolved, "at">;
+  if (!mvnoId) r = resolvedFrom(await getSmtpSettings(), "SMTP is not configured");
+  else {
+    const own = await getTenantSmtp(mvnoId);
+    if (own) r = resolvedFrom(own, "");
+    else {
+      const { data: m } = await supabaseAdmin().from("mvnos").select("shared_email").eq("id", mvnoId).maybeSingle();
+      r = m?.shared_email ? resolvedFrom(await getSmtpSettings(), "SMTP is not configured") : { settings: null, transport: null, reason: "This tenant has no email server (Admin → Email)" };
+    }
   }
-  return cache;
+  const entry = { at: Date.now(), ...r };
+  cache.set(key, entry);
+  return entry;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -84,20 +112,20 @@ ${opts.cta ? `<a href="${esc(opts.cta.url)}" style="display:inline-block;backgro
  * Sends an email. Never throws: notifications must not break customer flows.
  * Returns an error message when sending failed (used by the test button).
  */
-export async function sendMail(to: string[], subject: string, body: { html: string; text: string }): Promise<string | null> {
+export async function sendMail(to: string[], subject: string, body: { html: string; text: string }, opts: { mvnoId?: string | null } = {}): Promise<string | null> {
   const recipients = [...new Set(to.map((t) => t.trim()).filter(Boolean))];
   if (!recipients.length) return "No recipients";
   let status: "sent" | "failed" | "not_sent" = "sent";
   let error: string | null = null;
   try {
-    const { settings, transport: t } = await transport();
+    const { settings, transport: t, reason } = await transport(opts.mvnoId);
     if (!settings || !t) {
       status = "not_sent";
-      error = !settings ? "SMTP is not configured" : "Email notifications are switched off";
+      error = reason ?? "Email is switched off";
       return error;
     }
     await t.sendMail({
-      from: { name: settings.from_name, address: settings.from_email },
+      from: { name: settings.from_name || "Tuongee", address: settings.from_email },
       to: recipients,
       subject,
       html: body.html,
@@ -113,7 +141,7 @@ export async function sendMail(to: string[], subject: string, body: { html: stri
     // Email log (Admin → Email): who, subject, result. Never the body: it can contain passwords.
     await supabaseAdmin()
       .from("email_log")
-      .insert({ recipients, subject: subject.slice(0, 300), status, error: error?.slice(0, 500) ?? null })
+      .insert({ recipients, subject: subject.slice(0, 300), status, error: error?.slice(0, 500) ?? null, mvno_id: opts.mvnoId ?? null })
       .then(({ error: e }) => e && console.error("email log", e.message), () => undefined);
   }
 }

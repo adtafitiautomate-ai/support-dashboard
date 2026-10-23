@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check, Loader2, Mail, Send, Trash2 } from "lucide-react";
+import { useStore } from "@/lib/store";
 import { api, Badge, cx } from "./ui";
 
 const field = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30";
@@ -17,8 +18,15 @@ type Form = {
   enabled: boolean;
 };
 
-/** Admin → Email: platform SMTP server used for notification emails. */
+/**
+ * Admin → Email: the system mail server, or a tenant's own. A tenant sends only from its own server,
+ * or from the system one if it's allowed to share it: never from another tenant's.
+ */
 export function EmailSettings() {
+  const tenants = useStore((s) => [...s.mvnos.values()].sort((a, b) => a.name.localeCompare(b.name)));
+  const [scope, setScope] = useState(""); // "" = system
+  const tenant = tenants.find((t) => t.id === scope) ?? null;
+  const [shared, setShared] = useState(false);
   const [form, setForm] = useState<Form | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
   const [configured, setConfigured] = useState(false);
@@ -27,12 +35,19 @@ export function EmailSettings() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [testTo, setTestTo] = useState("");
 
+  const emptyForm = (name: string): Form => ({ host: "", port: 587, secure: false, username: "", password: "", from_email: "", from_name: name, enabled: true });
   useEffect(() => {
-    void fetch("/api/admin/smtp")
+    let live = true;
+    void fetch(`/api/admin/smtp${scope ? `?mvno=${scope}` : ""}`)
       .then((r) => r.json())
       .then((j) => {
+        if (!live) return;
+        setMsg(null);
+        setConfirmRemove(false);
         setConfigured(!!j.configured);
         setHasPassword(!!j.has_password);
+        setShared(!!j.shared_email);
+        const name = tenants.find((t) => t.id === scope)?.name ?? "Tuongee";
         setForm({
           host: j.host ?? "",
           port: j.port ?? 587,
@@ -40,18 +55,52 @@ export function EmailSettings() {
           username: j.username ?? "",
           password: "",
           from_email: j.from_email ?? "",
-          from_name: j.from_name ?? "Tuongee",
+          from_name: j.from_name ?? name,
           enabled: j.enabled ?? true,
         });
       });
-  }, []);
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the scope changes
+  }, [scope]);
+
+  const picker = (
+    <div className="card mb-4 flex flex-wrap items-center gap-3 p-4">
+      <span className="text-sm font-medium">Mail server for</span>
+      <select value={scope} onChange={(e) => (setForm(null), setScope(e.target.value))} className="h-9 rounded-full bg-surface px-3 text-sm shadow-sm ring-1 ring-black/5 outline-none">
+        <option value="">System (shared)</option>
+        {tenants.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+      <span className="text-xs text-muted">
+        {tenant ? `${tenant.name} sends from its own server below${shared ? ", or the system server if it has none" : ". Without one, it sends no emails"}.` : "Used by tenants that are allowed to share it, and for system emails."}
+      </span>
+    </div>
+  );
 
   if (!form)
     return (
-      <div className="card grid h-40 place-items-center">
-        <Loader2 className="size-5 animate-spin text-muted" />
-      </div>
+      <>
+        {picker}
+        <div className="card grid h-40 place-items-center">
+          <Loader2 className="size-5 animate-spin text-muted" />
+        </div>
+      </>
     );
+
+  async function toggleShared(v: boolean) {
+    setMsg(null);
+    try {
+      await api("/api/admin/smtp", { action: "shared", mvnoId: scope, shared: v });
+      setShared(v);
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    }
+  }
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm({ ...form, [k]: v });
 
@@ -60,7 +109,7 @@ export function EmailSettings() {
     setBusy("save");
     setMsg(null);
     try {
-      await api("/api/admin/smtp", { action: "save", ...form, password: form!.password || undefined, username: form!.username || undefined });
+      await api("/api/admin/smtp", { action: "save", mvnoId: scope || undefined, ...form, password: form!.password || undefined, username: form!.username || undefined });
       setConfigured(true);
       if (form!.password) setHasPassword(true);
       setForm({ ...form!, password: "" });
@@ -76,7 +125,7 @@ export function EmailSettings() {
     setBusy("test");
     setMsg(null);
     try {
-      await api("/api/admin/smtp", { action: "test", to: testTo });
+      await api("/api/admin/smtp", { action: "test", mvnoId: scope || undefined, to: testTo });
       setMsg({ ok: true, text: `Test email sent to ${testTo}. Check the inbox (and spam folder).` });
     } catch (err) {
       setMsg({ ok: false, text: (err as Error).message });
@@ -89,12 +138,17 @@ export function EmailSettings() {
     setBusy("remove");
     setMsg(null);
     try {
-      await api("/api/admin/smtp", { action: "remove" });
+      await api("/api/admin/smtp", { action: "remove", mvnoId: scope || undefined });
       setConfigured(false);
       setHasPassword(false);
       setConfirmRemove(false);
-      setForm({ host: "", port: 587, secure: false, username: "", password: "", from_email: "", from_name: "Tuongee", enabled: true });
-      setMsg({ ok: true, text: "SMTP settings removed. The server, username and password are deleted; no emails will be sent until new settings are saved." });
+      setForm(emptyForm(tenant?.name ?? "Tuongee"));
+      setMsg({
+        ok: true,
+        text: tenant
+          ? `${tenant.name}'s server is removed. ${shared ? "It now uses the system server." : "It sends no emails until a server is saved or sharing is allowed."}`
+          : "System SMTP settings removed. No system emails (and none for sharing tenants) until new settings are saved.",
+      });
     } catch (err) {
       setMsg({ ok: false, text: (err as Error).message });
     } finally {
@@ -103,21 +157,34 @@ export function EmailSettings() {
   }
 
   return (
+    <>
+    {picker}
     <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
       <form onSubmit={save} className="card space-y-4 p-5">
         <div className="flex items-center gap-2">
           <Mail className="size-4 text-muted" />
-          <h2 className="font-semibold">Outgoing email (SMTP)</h2>
+          <h2 className="font-semibold">{tenant ? `${tenant.name}'s mail server` : "System mail server (SMTP)"}</h2>
           {configured ? (
             form.enabled ? (
               <Badge tone="green">Active</Badge>
             ) : (
               <Badge tone="amber">Paused</Badge>
             )
+          ) : tenant && shared ? (
+            <Badge tone="blue">Uses system server</Badge>
           ) : (
-            <Badge tone="neutral">Not set up</Badge>
+            <Badge tone="neutral">{tenant ? "No email" : "Not set up"}</Badge>
           )}
         </div>
+        {tenant && (
+          <label className="flex items-start gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 text-sm ring-1 ring-black/5">
+            <input type="checkbox" className="mt-0.5" checked={shared} onChange={(e) => void toggleShared(e.target.checked)} />
+            <span>
+              Use the system mail server when {tenant.name} has none of its own
+              <span className="block text-xs text-muted">Its emails then come from the system From address. Leave off for independent tenants.</span>
+            </span>
+          </label>
+        )}
         <div className="grid grid-cols-[1fr_110px] gap-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">SMTP server</span>
@@ -209,12 +276,14 @@ export function EmailSettings() {
       <div className="space-y-4">
         <section className="card p-5">
           <h3 className="font-semibold">Send a test email</h3>
-          <p className="mt-1 text-xs text-muted">{configured ? "Sends a test using the saved settings." : "Save the settings first, then send a test here."}</p>
+          <p className="mt-1 text-xs text-muted">
+            {tenant ? `Sends exactly as ${tenant.name}'s emails would go${!configured && shared ? " (through the system server)" : ""}.` : configured ? "Sends a test using the saved settings." : "Save the settings first, then send a test here."}
+          </p>
           <div className="mt-3 flex gap-2">
             <input type="email" className={field} value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@company.com" />
             <button
               onClick={test}
-              disabled={!configured || !testTo || busy === "test"}
+              disabled={(!configured && !(tenant && shared)) || !testTo || busy === "test"}
               className="grid size-10 shrink-0 place-items-center rounded-xl bg-zinc-900 text-white disabled:opacity-40"
               title="Send test"
             >
@@ -242,6 +311,7 @@ export function EmailSettings() {
         </section>
       </div>
     </div>
+    </>
   );
 }
 

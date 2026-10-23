@@ -21,7 +21,7 @@ export async function setContactEmail(userId: string, email: string) {
 }
 
 /** Emails sign-in details. Returns null when sent, otherwise why it wasn't. */
-export async function mailCredentials(opts: { to: string | null; name: string; login: string; password: string; kind: "welcome" | "reset"; mvnoName?: string }) {
+export async function mailCredentials(opts: { to: string | null; name: string; login: string; password: string; kind: "welcome" | "reset"; mvnoName?: string; mvnoId?: string | null }) {
   if (!opts.to) return "No email address on file";
   const first = opts.name.split(/\s+/)[0] || opts.name;
   const welcome = opts.kind === "welcome";
@@ -41,5 +41,6 @@ export async function mailCredentials(opts: { to: string | null; name: string; l
       cta: { label: "Sign in", url: `${appUrl()}/login` },
       footer: "Keep this email private. If you weren't expecting it, tell your administrator.",
     }),
+    { mvnoId: opts.mvnoId },
   );
 }

@@ -88,6 +88,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/conversations/[
         cta: { label: "Open ticket", url: `${appUrl()}/tickets?t=${conv.id}` },
         footer: "You receive this because a Tuongee user escalated a customer ticket to you.",
       }),
+      { mvnoId: mvno.id },
     );
     if (err) throw new HttpError(400, `Email not sent: ${err}`);
 
