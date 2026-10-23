@@ -824,5 +824,5 @@ export async function askAppointmentDates(ctx: FlowCtx, service: string) {
 
 export async function askAppointmentName(ctx: FlowCtx, service: string, dates: string) {
   await setState(ctx, { flow: "appt", awaiting: "appt_name", data: { service, dates } });
-  await say(ctx, { type: "text", text: "And your *full name*, as it appears on your ID or passport?" });
+  await say(ctx, { type: "text", text: `Got it: *${dates}*.\n\nAnd your *full name*, as it appears on your ID or passport?` });
 }

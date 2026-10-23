@@ -37,6 +37,8 @@ export interface InboundMessage {
   type: "text" | "button_reply" | "list_reply" | "location" | "image" | "audio" | "video" | "document" | "sticker" | "unknown";
   text?: string;
   replyId?: string;
+  /** WhatsApp id of the message the customer quoted ("reply"), if any. */
+  quotedId?: string;
   location?: { lat: number; lng: number; name?: string; address?: string };
   mediaId?: string;
   mime?: string;

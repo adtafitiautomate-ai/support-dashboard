@@ -21,7 +21,7 @@ import { notifyDeletionRequest, notifyFailedTransaction } from "@/lib/notify";
 import * as F from "./flows";
 import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { allow, LIMITS } from "@/lib/security";
-import { hasOffices, runAgent, triage } from "./ai";
+import { hasOffices, readAppointmentDates, runAgent, triage, type ApptSlot } from "./ai";
 import { closingOf } from "@/lib/format";
 import { mediaForAi } from "@/lib/whatsapp/media";
 import type { MenuAction } from "@/lib/menu";
@@ -177,6 +177,9 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   const id = msg.replyId ?? "";
   const text = (msg.text ?? "").trim();
   const state = ctx.conv.bot_state ?? {};
+  // A reply that quotes an earlier message ("THIS" under "book me Thursday 29 Oct"): read both.
+  const quoted = msg.quotedId && text ? await quotedBody(ctx.conv.id, msg.quotedId) : null;
+  const said = quoted ? `${text} (replying to: "${quoted}")` : text;
 
   // ---------------------------------------------------------- button / list replies
   if (id) {
@@ -249,7 +252,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   if (state.flow === "appt" && text && !isEscape(text)) {
     const d = (state.data ?? {}) as { service?: string; dates?: string };
     if (state.awaiting === "appt_service") return F.askAppointmentDates(ctx, text.slice(0, 100));
-    if (state.awaiting === "appt_dates" && d.service) return F.askAppointmentName(ctx, d.service, text.slice(0, 200));
+    if (state.awaiting === "appt_dates" && d.service) return appointmentDates(ctx, d.service, said.slice(0, 400));
     if (state.awaiting === "appt_name" && d.service && d.dates) return finishAppointment(ctx, d.service, d.dates, text.slice(0, 120));
   }
   if (state.awaiting === "id_name" && text && !isEscape(text)) {
@@ -418,8 +421,11 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     case "resolve_conversation":
       return botResolve(ctx, String(input.summary ?? ""), String(input.category ?? "inquiry"));
     case "request_appointment": {
-      const service = String(input.service ?? "").trim();
-      return service ? F.askAppointmentDates(ctx, service.slice(0, 100)) : F.askAppointmentService(ctx);
+      const service = String(input.service ?? "").trim().slice(0, 100);
+      const preferred = String(input.preferred ?? "").trim();
+      const name = String(input.full_name ?? "").trim().slice(0, 120);
+      if (!service) return F.askAppointmentService(ctx);
+      return preferred ? appointmentDates(ctx, service, preferred.slice(0, 400), name || undefined) : F.askAppointmentDates(ctx, service);
     }
     case "emergency_help":
       return emergencyHelp(ctx, String(input.summary ?? ""));
@@ -789,11 +795,53 @@ async function watchNationalId(ctx: F.FlowCtx, name: string) {
   return F.say(ctx, { type: "text", text: `🔔 Done. I'll message you here when a card for *${name}* arrives.` });
 }
 
+async function quotedBody(conversationId: string, waId: string) {
+  const { data } = await supabaseAdmin().from("messages").select("body").eq("conversation_id", conversationId).eq("wa_message_id", waId).maybeSingle();
+  return data?.body?.slice(0, 300) ?? null;
+}
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * The customer's preferred day(s): read into real dates, then checked here (not by the AI):
+ * not in the past, the weekday they wrote matches the date, and the office is open that day.
+ */
+async function appointmentDates(ctx: F.FlowCtx, service: string, text: string, name?: string) {
+  const r = await readAppointmentDates(ctx.mvno, text).catch(() => null);
+  if (!r) return name ? finishAppointment(ctx, service, text, name) : F.askAppointmentName(ctx, service, text); // no AI: keep their words
+  const ask = async (why: string) => {
+    await updateConversation(ctx.conv.id, { bot_state: { flow: "appt", awaiting: "appt_dates", data: { service } } });
+    ctx.conv = { ...ctx.conv, bot_state: { flow: "appt", awaiting: "appt_dates", data: { service } } };
+    return F.say(ctx, { type: "text", text: `${why}\n\nWhich day suits you? For example: _Thursday 29 October, morning_.` });
+  };
+  if (!r.understood || !r.slots.length) return ask("I couldn't tell which day you mean.");
+
+  const hours = ctx.mvno.business_hours;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: hours?.tz ?? "Africa/Kampala" });
+  const long = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const problems: string[] = [];
+  const ok: ApptSlot[] = [];
+  for (const s of r.slots.slice(0, 5)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date) || Number.isNaN(Date.parse(s.date))) continue;
+    const day = WEEKDAYS[new Date(`${s.date}T12:00:00Z`).getUTCDay()];
+    if (s.said_weekday && !day.toLowerCase().startsWith(s.said_weekday.trim().toLowerCase().slice(0, 3))) {
+      problems.push(`${long(s.date).replace(/^\w+ /, "")} is a *${day}*, not a ${s.said_weekday}.`);
+    } else if (s.date < today) problems.push(`${long(s.date)} has already passed.`);
+    else if (s.date === today) problems.push("We can't book for today: please pick a later day.");
+    else if (hours?.days && !hours.days.includes(WEEKDAYS.indexOf(day))) problems.push(`We're closed on ${day}s.`);
+    else ok.push(s);
+  }
+  if (!ok.length) return ask(problems.join("\n") || "I couldn't tell which day you mean.");
+  const preferred = ok.map((s) => `${long(s.date)}${s.time ? `, ${s.time}` : ""}`).join(" or ");
+  if (problems.length) await F.say(ctx, { type: "text", text: `Note: ${problems.join(" ")} I've kept the other day.` });
+  return name ? finishAppointment(ctx, service, preferred, name) : F.askAppointmentName(ctx, service, preferred);
+}
+
 /** Appointment request → ticket with the details, for an officer to confirm. */
 async function finishAppointment(ctx: F.FlowCtx, service: string, dates: string, name: string) {
   await F.say(ctx, {
     type: "text",
-    text: `Thank you, ${name.split(" ")[0]}. Your appointment request is sent:\n\n• Service: *${service}*\n• Preferred: ${dates}\n\nAn officer will confirm your date and time here. Please don't come in until it's confirmed.`,
+    text: `Thank you, ${name}. Your appointment request is sent:\n\n• Service: *${service}*\n• Preferred: ${dates}\n\nAn officer will confirm your date and time here. Please don't come in until it's confirmed.`,
   });
   await doHandoff(ctx, { reason: `Appointment request: ${service}`, priority: "normal", category: "appointment", quiet: true });
   await updateConversation(ctx.conv.id, { subject: `Appointment: ${service}`.slice(0, 80), bot_state: {} }).catch(() => undefined);

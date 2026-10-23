@@ -135,12 +135,15 @@ ${kb.inline ? `Knowledge base:\n${formatKb(kb.articles)}` : "Knowledge base: the
 function customerContext(mvno: Mvno, contact: Contact) {
   return `Customer: ${contact.name ?? "unknown name"}, WhatsApp +${contact.wa_id}, plan ${contact.plan ?? "prepaid"}${
     contact.tags.length ? `, tags: ${contact.tags.join(", ")}` : ""
-  }. Their location is ${contact.last_location ? "known" : "unknown"}. Local time: ${new Date().toLocaleString("en-GB", {
+  }. Their location is ${contact.last_location ? "known" : "unknown"}. Today is ${new Date().toLocaleString("en-GB", {
     timeZone: mvno.business_hours?.tz ?? "Africa/Kampala",
-    weekday: "short",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  })}.`;
+  })} (local time).`;
 }
 
 /** Converts stored WhatsApp history into Claude turns (customer = user, bot/agent = assistant). */
@@ -388,7 +391,16 @@ const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "request_appointment",
     description: "Start an appointment request: the bot asks for the service, preferred dates and full name, then creates a ticket an officer confirms.",
-    input_schema: { type: "object", properties: { service: { type: "string", description: "The service if the customer already said it, else empty string." } }, required: ["service"], additionalProperties: false },
+    input_schema: {
+      type: "object",
+      properties: {
+        service: { type: "string", description: "The service if the customer already said it, else empty string." },
+        preferred: { type: "string", description: "The days/times the customer already asked for, in their words (e.g. \"Thursday 29 October 2026 morning\"), else empty string." },
+        full_name: { type: "string", description: "The customer's full name if they already gave it in this chat, else empty string." },
+      },
+      required: ["service", "preferred", "full_name"],
+      additionalProperties: false,
+    },
     strict: true,
   },
   {
@@ -476,6 +488,33 @@ function transcript(history: Message[]) {
       return `${who}: ${m.body}`;
     })
     .join("\n");
+}
+
+const ApptDates = z.object({
+  understood: z.boolean(),
+  slots: z.array(z.object({ date: z.string(), time: z.string().nullable(), said_weekday: z.string().nullable() })),
+});
+export type ApptSlot = z.infer<typeof ApptDates>["slots"][number];
+
+/** Reads the day(s) and time(s) a customer asked for into real dates (YYYY-MM-DD). */
+export async function readAppointmentDates(mvno: Mvno, text: string) {
+  const c = claude();
+  if (!c) return null;
+  const tz = mvno.business_hours?.tz ?? "Africa/Kampala";
+  const today = new Date().toLocaleDateString("en-GB", { timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const res = await c.messages.parse({
+    model: MODEL,
+    max_tokens: 1024,
+    output_config: { effort: "low", format: zodOutputFormat(ApptDates) },
+    system: `Today is ${today}. A customer is asking for an appointment. Turn the day(s) they want into dates.
+- One slot per day they mention, date as YYYY-MM-DD. Resolve "tomorrow", "next Thursday", "the 29th" from today; a date without a year is the next one to come.
+- time: their time preference in short words ("morning", "10:00", "after 2pm"), or null.
+- said_weekday: the weekday name they wrote for that day (e.g. "Thursday"), or null. Don't correct it.
+- understood: false if no day can be identified (e.g. "this", "ok", "whenever").`,
+    messages: [{ role: "user", content: text }],
+  });
+  await recordAiUsage(res, { kind: "triage", mvnoId: mvno.id });
+  return res.parsed_output ?? null;
 }
 
 export async function triage(history: Message[], kind: AiKind = "triage"): Promise<TriageResult | null> {

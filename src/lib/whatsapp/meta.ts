@@ -160,6 +160,7 @@ interface MetaInboundMessage {
   from: string;
   timestamp: string;
   type: string;
+  context?: { id?: string; from?: string };
   text?: { body: string };
   interactive?: {
     type: "button_reply" | "list_reply";
@@ -209,7 +210,7 @@ export function parseWebhook(body: unknown): ParsedBatch[] {
 }
 
 function normalizeInbound(m: MetaInboundMessage, profileName?: string): InboundMessage {
-  const base = { waMessageId: m.id, from: m.from, profileName, timestamp: new Date(Number(m.timestamp) * 1000) };
+  const base = { waMessageId: m.id, from: m.from, profileName, timestamp: new Date(Number(m.timestamp) * 1000), ...(m.context?.id && { quotedId: m.context.id }) };
   switch (m.type) {
     case "text":
       return { ...base, type: "text", text: m.text?.body ?? "" };
