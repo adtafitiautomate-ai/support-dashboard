@@ -27,7 +27,7 @@ import { describeDays, tzLabel } from "@/lib/hours";
 import { mediaForAi } from "@/lib/whatsapp/media";
 import type { MenuAction } from "@/lib/menu";
 import { notifyUsers } from "@/lib/user-notify";
-import { lookupNationalId, nameKey } from "@/lib/id-register";
+import { lookupNationalId, nameKey, nameTokens } from "@/lib/id-register";
 import { appUrl, renderEmail, sendMail } from "@/lib/mail";
 
 /** Entry point for every inbound WhatsApp message, from Meta or the simulator. */
@@ -427,7 +427,7 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     case "request_appointment": {
       const service = String(input.service ?? "").trim().slice(0, 100);
       const preferred = String(input.preferred ?? "").trim();
-      const name = String(input.full_name ?? "").trim().slice(0, 120);
+      const name = (await typedName(ctx, String(input.full_name ?? ""))) ?? "";
       if (!service) return F.askAppointmentService(ctx);
       return preferred ? appointmentDates(ctx, service, preferred.slice(0, 400), name || undefined) : F.askAppointmentDates(ctx, service);
     }
@@ -446,8 +446,8 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
     case "show_topic_options":
       return topicMenu(ctx, String(input.topic ?? "").trim().slice(0, 60) || "Our services");
     case "check_national_id": {
-      const name = String(input.full_name ?? "").trim();
-      return name ? checkNationalId(ctx, name.slice(0, 120)) : askIdName(ctx);
+      const name = await typedName(ctx, String(input.full_name ?? ""));
+      return name ? checkNationalId(ctx, name) : askIdName(ctx);
     }
     case "answer_from_kb":
       return answerFromKb(ctx, String(input.article_id ?? ""), String(input.answer ?? ""));
@@ -756,6 +756,22 @@ async function emergencyHelp(ctx: F.FlowCtx, summary: string) {
 
 // ------------------------------------------------------------------ National ID register
 
+/**
+ * A name the AI passes on is used only if the customer typed it in this chat: never their WhatsApp
+ * profile name (which can be a business, a nickname or someone else's phone).
+ */
+async function typedName(ctx: F.FlowCtx, raw: string) {
+  const name = raw.trim().slice(0, 120);
+  const words = nameTokens(name);
+  if (words.length < 2) return null;
+  const typed = new Set(
+    (await recentMessages(ctx.conv.id, 30))
+      .filter((m) => m.direction === "in" && m.body)
+      .flatMap((m) => nameTokens(m.body!)),
+  );
+  return words.every((w) => typed.has(w)) ? name : null;
+}
+
 async function askIdName(ctx: F.FlowCtx, attempt = 0) {
   await updateConversation(ctx.conv.id, { bot_state: { flow: "id", awaiting: "id_name", data: { attempt } } });
   await F.say(ctx, { type: "text", text: "I can check if your National ID card has arrived. Please send your *full name exactly as on your application form* (all your names)." });
@@ -809,7 +825,7 @@ async function checkNationalId(ctx: F.FlowCtx, name: string) {
       await updateConversation(ctx.conv.id, { bot_state: { flow: "id", data: { idname: name } } });
       return F.say(ctx, {
         type: "buttons",
-        body: `I couldn't find *${name}* in the cards received so far (latest: ${latest.label}${latest.batch_date ? `, ${day(latest.batch_date)}` : ""}).\n\nI can message you here as soon as it arrives.`,
+        body: `I couldn't find *${name}* in the cards received so far (latest list: ${latest.label}${latest.batch_date && !latest.label.includes(day(latest.batch_date).split(" ").pop()!) ? `, ${day(latest.batch_date)}` : ""}).\n\nI can message you here as soon as it arrives.`,
         buttons: [{ id: "idw:yes", title: "🔔 Notify me" }, ...ID_OFFICER],
       });
   }

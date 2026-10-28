@@ -397,7 +397,7 @@ const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
       properties: {
         service: { type: "string", description: "The service if the customer already said it, else empty string." },
         preferred: { type: "string", description: "The days/times the customer already asked for, in their words (e.g. \"Thursday 29 October 2026 morning\"), else empty string." },
-        full_name: { type: "string", description: "The customer's full name if they already gave it in this chat, else empty string." },
+        full_name: { type: "string", description: "The full name the customer TYPED in this chat, else empty string. Never use their WhatsApp profile name." },
       },
       required: ["service", "preferred", "full_name"],
       additionalProperties: false,
@@ -421,7 +421,7 @@ const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
     description: "Check whether the customer's National ID card has arrived, in the uploaded register of received cards. Only the customer's own name is checked; the system replies.",
     input_schema: {
       type: "object",
-      properties: { full_name: { type: "string", description: "The customer's full name as they gave it, else empty string (the system then asks for it)." } },
+      properties: { full_name: { type: "string", description: "The full name the customer TYPED in this chat for this check, else empty string (the system then asks for it). Never use their WhatsApp profile name." } },
       required: ["full_name"],
       additionalProperties: false,
     },
