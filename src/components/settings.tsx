@@ -202,6 +202,13 @@ function BotSettings({ mvno }: { mvno: Mvno }) {
         hint={`Outside these hours (${hours.tz}), or when no agent is online, the bot logs a ticket, tells the customer when we'll follow up, and assigns it to the first agent who comes online.`}
       >
         <div className="flex flex-wrap items-center gap-2">
+          <select className={cx(input, "w-auto")} value={hours.tz} onChange={(e) => setHours({ tz: e.target.value })} aria-label="Time zone">
+            {[...new Set([hours.tz, "Africa/Kampala", "Africa/Nairobi", "America/New_York", "America/Chicago", "America/Los_Angeles", "Europe/London", "Europe/Berlin", "Asia/Dubai"])].map((z) => (
+              <option key={z} value={z}>
+                {z.replace("_", " ")}
+              </option>
+            ))}
+          </select>
           <input type="time" className={cx(input, "w-32")} value={hours.open} onChange={(e) => setHours({ open: e.target.value })} aria-label="Opens at" />
           <span className="text-sm text-muted">to</span>
           <input type="time" className={cx(input, "w-32")} value={hours.close} onChange={(e) => setHours({ close: e.target.value })} aria-label="Closes at" />
@@ -609,7 +616,17 @@ function CalendarSettings({ mvno }: { mvno: Mvno }) {
     templateName: mvno.reminder_template_name ?? "",
     templateLang: mvno.reminder_template_lang ?? "en",
     idTemplate: mvno.id_ready_template_name ?? "",
+    apptOpen: mvno.appointment_hours?.open ?? "",
+    apptClose: mvno.appointment_hours?.close ?? "",
+    closed: (mvno.closed_dates ?? []).map((c) => `${c.date} ${c.name}`).join("\n"),
   });
+  // "2026-12-25 Christmas Day" per line → [{ date, name }]
+  const closedDates = f.closed
+    .split("\n")
+    .map((l) => l.trim().match(/^(\d{4}-\d{2}-\d{2})\s*(.*)$/))
+    .filter((m): m is RegExpMatchArray => !!m)
+    .map((m) => ({ date: m[1], name: m[2].trim() || "Closed" }));
+  const apptHours = f.apptOpen && f.apptClose ? { open: f.apptOpen, close: f.apptClose } : null;
   const [keyJson, setKeyJson] = useState("");
   const [sa, setSa] = useState<string | null>(null);
   const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
@@ -627,8 +644,8 @@ function CalendarSettings({ mvno }: { mvno: Mvno }) {
         e.preventDefault();
         setTest(null);
         void saver.run(async () => {
-          await api("/api/settings/calendar", { action: "save", mvnoId: mvno.id, calendarId: f.calendarId || null, minutes: f.minutes, templateName: f.templateName || null, templateLang: f.templateLang, idTemplate: f.idTemplate || null, serviceAccountJson: keyJson || undefined });
-          patch((s) => s.mvnos.set(mvno.id, { ...mvno, google_calendar_id: f.calendarId || null, appointment_minutes: f.minutes, reminder_template_name: f.templateName || null, reminder_template_lang: f.templateLang, id_ready_template_name: f.idTemplate || null }));
+          await api("/api/settings/calendar", { action: "save", mvnoId: mvno.id, calendarId: f.calendarId || null, minutes: f.minutes, templateName: f.templateName || null, templateLang: f.templateLang, idTemplate: f.idTemplate || null, appointmentHours: apptHours, closedDates, serviceAccountJson: keyJson || undefined });
+          patch((s) => s.mvnos.set(mvno.id, { ...mvno, google_calendar_id: f.calendarId || null, appointment_minutes: f.minutes, reminder_template_name: f.templateName || null, reminder_template_lang: f.templateLang, id_ready_template_name: f.idTemplate || null, appointment_hours: apptHours, closed_dates: closedDates }));
           if (keyJson) {
             try {
               setSa(JSON.parse(keyJson).client_email ?? sa);
@@ -675,6 +692,16 @@ function CalendarSettings({ mvno }: { mvno: Mvno }) {
           <input className={input} value={f.templateLang} onChange={(e) => setF({ ...f, templateLang: e.target.value.trim() })} placeholder="en" />
         </Field>
       </div>
+      <Field label="Appointment hours" hint={`When people can be booked, e.g. consular hours. Leave empty to use the working hours (${mvno.business_hours?.open ?? "08:00"}–${mvno.business_hours?.close ?? "20:00"}). Days follow the working days.`}>
+        <div className="flex items-center gap-2">
+          <input type="time" className={cx(input, "w-32")} value={f.apptOpen} onChange={(e) => setF({ ...f, apptOpen: e.target.value })} aria-label="Appointments from" />
+          <span className="text-sm text-muted">to</span>
+          <input type="time" className={cx(input, "w-32")} value={f.apptClose} onChange={(e) => setF({ ...f, apptClose: e.target.value })} aria-label="Appointments until" />
+        </div>
+      </Field>
+      <Field label="Closed dates" hint={`Public holidays and other days with no appointments, one per line: 2026-12-25 Christmas Day. ${closedDates.length} date${closedDates.length === 1 ? "" : "s"} listed.`}>
+        <textarea className={cx(input, "h-32 font-mono text-xs")} value={f.closed} onChange={(e) => setF({ ...f, closed: e.target.value })} placeholder={"2026-12-25 Christmas Day\n2026-12-26 Boxing Day"} />
+      </Field>
       <Field label="ID arrived template (optional)" hint="Approved WhatsApp template for telling people on the ID register waiting list that their card arrived, when their 24-hour window has closed. Variables: {{1}} first name, {{2}} batch. Same language as above.">
         <input className={input} value={f.idTemplate} onChange={(e) => setF({ ...f, idTemplate: e.target.value.trim() })} placeholder="national_id_ready" />
       </Field>

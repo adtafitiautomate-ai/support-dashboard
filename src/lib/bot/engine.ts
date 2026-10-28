@@ -23,6 +23,7 @@ import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { allow, LIMITS } from "@/lib/security";
 import { hasOffices, readAppointmentDates, runAgent, topicOptions, triage, type ApptSlot } from "./ai";
 import { closingOf } from "@/lib/format";
+import { describeDays, tzLabel } from "@/lib/hours";
 import { mediaForAi } from "@/lib/whatsapp/media";
 import type { MenuAction } from "@/lib/menu";
 import { notifyUsers } from "@/lib/user-notify";
@@ -844,15 +845,19 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 async function appointmentDates(ctx: F.FlowCtx, service: string, text: string, name?: string) {
   const r = await readAppointmentDates(ctx.mvno, text).catch(() => null);
   if (!r) return name ? finishAppointment(ctx, service, text, name) : F.askAppointmentName(ctx, service, text); // no AI: keep their words
+  const hours = ctx.mvno.business_hours;
+  const tz = hours?.tz ?? "Africa/Kampala";
+  const window = ctx.mvno.appointment_hours ?? { open: hours?.open ?? "08:00", close: hours?.close ?? "17:00" };
+  const when = `${describeDays(hours?.days ?? [0, 1, 2, 3, 4, 5, 6])}, ${window.open}–${window.close} (${tzLabel(tz)})`;
   const ask = async (why: string) => {
     await updateConversation(ctx.conv.id, { bot_state: { flow: "appt", awaiting: "appt_dates", data: { service } } });
     ctx.conv = { ...ctx.conv, bot_state: { flow: "appt", awaiting: "appt_dates", data: { service } } };
-    return F.say(ctx, { type: "text", text: `${why}\n\nWhich day suits you? For example: _Thursday 29 October, morning_.` });
+    return F.say(ctx, { type: "text", text: `${why}\n\nWe see people ${when}. Which day and time suit you? For example: _Thursday 29 October, 10am_.` });
   };
   if (!r.understood || !r.slots.length) return ask("I couldn't tell which day you mean.");
 
-  const hours = ctx.mvno.business_hours;
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: hours?.tz ?? "Africa/Kampala" });
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+  const closed = new Map((ctx.mvno.closed_dates ?? []).map((c) => [c.date, c.name]));
   const long = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const problems: string[] = [];
   const ok: ApptSlot[] = [];
@@ -864,6 +869,9 @@ async function appointmentDates(ctx: F.FlowCtx, service: string, text: string, n
     } else if (s.date < today) problems.push(`${long(s.date)} has already passed.`);
     else if (s.date === today) problems.push("We can't book for today: please pick a later day.");
     else if (hours?.days && !hours.days.includes(WEEKDAYS.indexOf(day))) problems.push(`We're closed on ${day}s.`);
+    else if (closed.has(s.date)) problems.push(`We're closed on ${long(s.date)} (${closed.get(s.date)}).`);
+    else if ((s.from_time && s.from_time >= window.close) || (s.until_time && s.until_time <= window.open))
+      problems.push(`${s.time ?? "That time"} is outside appointment hours (${window.open}–${window.close}).`);
     else ok.push(s);
   }
   if (!ok.length) return ask(problems.join("\n") || "I couldn't tell which day you mean.");

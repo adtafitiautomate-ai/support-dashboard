@@ -499,7 +499,7 @@ function transcript(history: Message[]) {
 
 const ApptDates = z.object({
   understood: z.boolean(),
-  slots: z.array(z.object({ date: z.string(), time: z.string().nullable(), said_weekday: z.string().nullable() })),
+  slots: z.array(z.object({ date: z.string(), time: z.string().nullable(), from_time: z.string().nullable(), until_time: z.string().nullable(), said_weekday: z.string().nullable() })),
 });
 export type ApptSlot = z.infer<typeof ApptDates>["slots"][number];
 
@@ -516,6 +516,7 @@ export async function readAppointmentDates(mvno: Mvno, text: string) {
     system: `Today is ${today}. A customer is asking for an appointment. Turn the day(s) they want into dates.
 - One slot per day they mention, date as YYYY-MM-DD. Resolve "tomorrow", "next Thursday", "the 29th" from today; a date without a year is the next one to come.
 - time: their time preference in short words ("morning", "10:00", "after 2pm"), or null.
+- from_time / until_time: that preference as a 24-hour window (HH:MM): "10am" → 10:00 / 10:00; "morning" → 08:00 / 12:00; "afternoon" → 12:00 / 17:00; "after 2pm" → 14:00 / null; "before 11" → null / 11:00; "evening" → 17:00 / 21:00. Both null if no time.
 - said_weekday: the weekday name they wrote for that day (e.g. "Thursday"), or null. Don't correct it.
 - understood: false if no day can be identified (e.g. "this", "ok", "whenever").`,
     messages: [{ role: "user", content: text }],

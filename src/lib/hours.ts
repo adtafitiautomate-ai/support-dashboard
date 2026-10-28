@@ -57,3 +57,27 @@ export function describeHours(hours: Hours | null | undefined) {
           : days.map((d) => DAY_NAMES[d].slice(0, 3)).join(", ");
   return `${h.open}–${h.close}, ${span}`;
 }
+
+/** The UTC instant of a wall-clock date and time in a time zone (handles daylight saving). */
+export function zonedToUtc(date: string, time: string, tz: string) {
+  const guess = new Date(`${date}T${time.length === 5 ? `${time}:00` : time}Z`);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(guess);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const shown = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"));
+  return new Date(guess.getTime() - (shown - guess.getTime()));
+}
+
+/** "Eastern Time", "East Africa Time": for telling customers which clock we mean. */
+export function tzLabel(tz: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longGeneric" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value ?? tz;
+  } catch {
+    return tz;
+  }
+}
+
+/** Days as words: "Monday to Friday". */
+export function describeDays(days: number[]) {
+  const d = [...days].sort();
+  return d.length === 7 ? "every day" : d.join() === "1,2,3,4,5" ? "Monday to Friday" : d.join() === "1,2,3,4,5,6" ? "Monday to Saturday" : d.map((x) => DAY_NAMES[x]).join(", ");
+}

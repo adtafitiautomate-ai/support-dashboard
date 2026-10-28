@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarCheck, Check, Loader2, MessageSquareText, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatPhone } from "@/lib/format";
+import { zonedToUtc } from "@/lib/hours";
 import { PageHeader } from "./app-shell";
 import { api, Badge, cx, relTime, useNow } from "./ui";
 
@@ -168,8 +169,8 @@ function ApptCard({
     setBusy(false);
     if (ok) setMode(null);
   }
-  // The tenant works in Kampala time; send an explicit offset so the slot is stored correctly.
-  const iso = () => (tz === "Africa/Kampala" ? `${f.date}T${f.time}:00+03:00` : new Date(`${f.date}T${f.time}`).toISOString());
+  // The slot is in the tenant's time zone, whatever the browser's own clock is.
+  const iso = () => zonedToUtc(f.date, f.time, tz).toISOString();
 
   return (
     <li className="card p-4">

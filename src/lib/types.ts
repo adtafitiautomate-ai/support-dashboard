@@ -46,6 +46,8 @@ export interface Mvno {
   greeting: string;
   sla_first_response_mins: number;
   business_hours: { tz: string; open: string; close: string; days: number[] };
+  appointment_hours?: { open: string; close: string } | null; // when appointments can be booked (null = business_hours)
+  closed_dates?: { date: string; name: string }[]; // public holidays etc. (YYYY-MM-DD)
 }
 
 export interface EscalationContact {

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent, sendMessage } from "@/lib/inbox/service";
 import { notifyUsers } from "@/lib/user-notify";
 import { appUrl } from "@/lib/mail";
+import { zonedToUtc } from "@/lib/hours";
 import type { Contact, Conversation, Mvno } from "@/lib/types";
 
 const H = 3_600_000;
@@ -84,8 +85,8 @@ async function morningAgenda() {
     if (done) continue;
     await db.from("app_cache").upsert({ key, value: { sent: true } });
 
-    // Today in the tenant's time zone (Kampala is UTC+3, no daylight saving).
-    const start = new Date(`${day}T00:00:00${tz === "Africa/Kampala" ? "+03:00" : "Z"}`);
+    // Today in the tenant's time zone.
+    const start = zonedToUtc(day, "00:00", tz);
     const { data: appts } = await db
       .from("appointments")
       .select("scheduled_at, service, full_name, office")

@@ -29,6 +29,8 @@ const Body = z.discriminatedUnion("action", [
     idTemplate: z.string().trim().max(512).nullable().optional(),
     templateLang: z.string().trim().max(20).default("en"),
     serviceAccountJson: z.string().max(10_000).optional(), // only when replacing the key
+    appointmentHours: z.object({ open: z.string().regex(/^\d{2}:\d{2}$/), close: z.string().regex(/^\d{2}:\d{2}$/) }).nullable().optional(),
+    closedDates: z.array(z.object({ date: z.iso.date(), name: z.string().trim().max(80) })).max(200).optional(),
   }),
   z.object({ action: z.literal("test"), mvnoId: z.guid() }),
 ]);
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
     }
     const { error } = await db
       .from("mvnos")
-      .update({ google_calendar_id: body.calendarId || null, appointment_minutes: body.minutes, reminder_template_name: body.templateName || null, reminder_template_lang: body.templateLang || "en", ...(body.idTemplate !== undefined && { id_ready_template_name: body.idTemplate || null }) })
+      .update({ google_calendar_id: body.calendarId || null, appointment_minutes: body.minutes, reminder_template_name: body.templateName || null, reminder_template_lang: body.templateLang || "en", ...(body.idTemplate !== undefined && { id_ready_template_name: body.idTemplate || null }), ...(body.appointmentHours !== undefined && { appointment_hours: body.appointmentHours }), ...(body.closedDates && { closed_dates: body.closedDates }) })
       .eq("id", body.mvnoId);
     if (error) throw error;
     forgetMvno(body.mvnoId);
