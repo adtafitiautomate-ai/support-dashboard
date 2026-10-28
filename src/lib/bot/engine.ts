@@ -21,7 +21,7 @@ import { notifyDeletionRequest, notifyFailedTransaction } from "@/lib/notify";
 import * as F from "./flows";
 import { storeInboundMedia } from "@/lib/whatsapp/media";
 import { allow, LIMITS } from "@/lib/security";
-import { hasOffices, readAppointmentDates, runAgent, triage, type ApptSlot } from "./ai";
+import { hasOffices, readAppointmentDates, runAgent, topicOptions, triage, type ApptSlot } from "./ai";
 import { closingOf } from "@/lib/format";
 import { mediaForAi } from "@/lib/whatsapp/media";
 import type { MenuAction } from "@/lib/menu";
@@ -221,7 +221,8 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         // General tenant menu. "answer" items fall through to the AI with the row title as the question.
         const item = F.generalMenuItem(ctx.mvno, a);
         if (!item) return F.showMenu(ctx);
-        if (item.action === "answer" || (item.action === "location" && !(await hasOffices(ctx.mvno.id)))) break;
+        if (item.action === "answer") return topicMenu(ctx, item.title, item.description);
+        if (item.action === "location" && !(await hasOffices(ctx.mvno.id))) break;
         return generalAction(ctx, item.action, item.title);
       }
       case "appt": {
@@ -237,6 +238,8 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         return askIdName(ctx);
       case "idc":
         return askIdName(ctx);
+      case "kb": // a topic list row: send that article as written
+        return sendArticle(ctx, a);
       case "lost": // lost:this | lost:block:<both|line|none>
         if (a === "this") return F.askLostBlock(ctx, ctx.contact.wa_id);
         if (a === "block" && typeof state.data?.msisdn === "string") return finishLostLine(ctx, state.data.msisdn, b === "both" || b === "line" || b === "none" ? b : "both");
@@ -350,7 +353,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   });
   if (!turn) return keywordFallback(ctx, text);
 
-  const cited = turn.tools.some((t) => ["answer_from_kb", "handoff_to_agent", "resolve_conversation", "request_appointment", "emergency_help", "show_offices", "show_main_menu", "check_national_id"].includes(t.name));
+  const cited = turn.tools.some((t) => ["answer_from_kb", "handoff_to_agent", "resolve_conversation", "request_appointment", "emergency_help", "show_offices", "show_main_menu", "check_national_id", "show_topic_options"].includes(t.name));
   if (ctx.mvno.strict_sources && turn.text && !cited && turn.text.length > 220) {
     // Sourced answers only: a long factual-looking reply with no cited article is not sent.
     await F.say(ctx, {
@@ -439,6 +442,8 @@ async function runTool(ctx: F.FlowCtx, name: string, input: Record<string, unkno
           { id: "menu:main", title: "Main menu" },
         ],
       });
+    case "show_topic_options":
+      return topicMenu(ctx, String(input.topic ?? "").trim().slice(0, 60) || "Our services");
     case "check_national_id": {
       const name = String(input.full_name ?? "").trim();
       return name ? checkNationalId(ctx, name.slice(0, 120)) : askIdName(ctx);
@@ -669,7 +674,8 @@ async function generalAction(ctx: F.FlowCtx, action: MenuAction, title: string) 
     case "appointment":
       return F.askAppointmentService(ctx);
     case "id_status":
-      return askIdName(ctx);
+      // "Has my ID arrived?" first, then the National ID articles (registration, collection, fees...).
+      return topicMenu(ctx, title, "registration, collection, fees, renewal, changes", [{ id: "idc:start", title: "Has my ID arrived?", description: "Check the list of cards received at the embassy" }]);
     case "location":
       if (await F.showOffices(ctx)) return;
       return aiTopic(ctx, title); // no offices in Locations: answer from the knowledge base
@@ -680,6 +686,34 @@ async function generalAction(ctx: F.FlowCtx, action: MenuAction, title: string) 
     default:
       return aiTopic(ctx, title);
   }
+}
+
+/** A menu topic as a WhatsApp list of its knowledge base articles; picking one sends that article. */
+async function topicMenu(ctx: F.FlowCtx, title: string, hint?: string | null, extra: { id: string; title: string; description?: string }[] = []) {
+  const others = F.siblingTopics(ctx.mvno, title);
+  const topic = `${title}${hint ? ` (${hint})` : ""}${others.length ? `. These have their own menu items, so leave their articles out: ${others.join(", ")}` : ""}`;
+  const items = await topicOptions(ctx.mvno, topic).catch((e) => {
+    console.error("topic options", e);
+    return [];
+  });
+  const rows = [...extra, ...items.map((i) => ({ id: `kb:${i.id}`, title: i.label, description: i.description }))].slice(0, 10);
+  if (!rows.length) return aiTopic(ctx, title);
+  return F.say(ctx, {
+    type: "list",
+    body: `*${title}*: pick one below, or type your question.`,
+    button: "See options",
+    sections: [{ title: title.slice(0, 24), rows }],
+  });
+}
+
+/** Sends one article exactly as written, with its source and last-verified date when it has them. */
+async function sendArticle(ctx: F.FlowCtx, id: string) {
+  const { data: a } = await supabaseAdmin().from("kb_articles").select("mvno_id, title, body, source_url, verified_at").eq("id", id).maybeSingle();
+  if (!a || a.mvno_id !== ctx.mvno.id) return F.showMenu(ctx);
+  if (ctx.mvno.strict_sources && (!a.source_url || !a.verified_at)) return answerFromKb(ctx, id, ""); // unsourced: refuse, as for the AI
+  const verified = a.verified_at ? new Date(a.verified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+  const footer = a.source_url ? `\n\n🔗 Source: ${a.source_url}${verified ? `\n✅ Last verified: ${verified}` : ""}` : "";
+  return F.say(ctx, { type: "text", text: `*${a.title}*\n\n${a.body.trim()}${footer}`.slice(0, 4000), previewUrl: false });
 }
 
 /** Lets the AI answer a menu topic as if the customer had typed it. */

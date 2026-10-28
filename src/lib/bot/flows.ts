@@ -773,6 +773,8 @@ export async function createDelivery(
 // ------------------------------------------------------------------ general tenants (e.g. an embassy)
 
 const menuOf = (m: Mvno) => (m.menu_items?.length ? m.menu_items : DEFAULT_GENERAL_MENU).slice(0, MAX_MENU_ITEMS);
+/** Other menu topics that list knowledge base articles (so a topic doesn't repeat its siblings' articles). */
+export const siblingTopics = (m: Mvno, title: string) => menuOf(m).filter((i) => (i.action === "answer" || i.action === "id_status") && i.title !== title).map((i) => i.title);
 
 /** The tenant's own menu (one WhatsApp list, up to 10 rows). */
 async function showGeneralMenu(ctx: FlowCtx, intro?: string) {

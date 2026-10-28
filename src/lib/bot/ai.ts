@@ -83,6 +83,7 @@ ${
 - Appointments: call request_appointment (it collects the details and creates a request an officer confirms). Never promise a date or time yourself.
 - Emergencies (someone in danger, arrested, injured, in hospital, lost or stolen documents while travelling, any urgent safety issue): call emergency_help immediately.
 - Office address or opening hours: call show_offices.
+- "What services/documents can you help with?", or a topic with no specific question (e.g. just "Official documents"): call show_topic_options with that topic. Never answer a list of services in plain text.
 - "Has my National ID arrived?" or any ID status question: call check_national_id (with their full name if they gave it). Never say yourself whether a card has arrived, never guess, and never mention anyone else's name. How to collect a card is a normal knowledge-base question.
 - Wanting a person, complaints, or anything you can't answer from the knowledge base: call handoff_to_agent.
 - Never ask for passwords or PINs. Don't ask for full ID or passport numbers unless an article says they're needed.
@@ -410,6 +411,12 @@ const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
     strict: true,
   },
   {
+    name: "show_topic_options",
+    description: "Show a WhatsApp list of the services/articles under a topic, for the customer to pick one. Use when they ask what services, documents or options you help with, or name a topic without a specific question.",
+    input_schema: { type: "object", properties: { topic: { type: "string", description: "The topic in a few words, e.g. \"Official documents\", \"Passports and visas\", or \"All services\"." } }, required: ["topic"], additionalProperties: false },
+    strict: true,
+  },
+  {
     name: "check_national_id",
     description: "Check whether the customer's National ID card has arrived, in the uploaded register of received cards. Only the customer's own name is checked; the system replies.",
     input_schema: {
@@ -515,6 +522,52 @@ export async function readAppointmentDates(mvno: Mvno, text: string) {
   });
   await recordAiUsage(res, { kind: "triage", mvnoId: mvno.id });
   return res.parsed_output ?? null;
+}
+
+const TopicPick = z.object({ items: z.array(z.object({ id: z.string(), label: z.string(), description: z.string() })) });
+export type TopicItem = z.infer<typeof TopicPick>["items"][number];
+const topicCache = new Map<string, { at: number; items: TopicItem[] }>();
+
+/**
+ * The knowledge base articles that belong under a menu topic (e.g. "Official documents"), with short
+ * labels for a WhatsApp list. Duplicates (same title or text, e.g. a PDF uploaded twice) are dropped.
+ */
+export async function topicOptions(mvno: Mvno, topic: string): Promise<TopicItem[]> {
+  const strict = !!mvno.strict_sources;
+  const { data } = await supabaseAdmin().from("kb_articles").select("id,title,body,tags,source_url,verified_at,updated_at").eq("mvno_id", mvno.id).order("updated_at", { ascending: false }).limit(2000);
+  const seen = new Set<string>();
+  const articles: (KbArticle & { updated_at: string })[] = [];
+  for (const a of (data ?? []) as (KbArticle & { updated_at: string })[]) {
+    if (strict && !sourced(a)) continue;
+    const t = a.title.toLowerCase().replace(/\W+/g, " ").trim();
+    const b = a.body.trim();
+    if (seen.has(t) || seen.has(b)) continue;
+    seen.add(t);
+    seen.add(b);
+    articles.push(a);
+  }
+  if (!articles.length) return [];
+  const key = `${mvno.id}:${topic.toLowerCase()}:${articles.length}:${articles[0].updated_at}`;
+  const hit = topicCache.get(key);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.items;
+
+  const c = claude();
+  if (!c) return [];
+  const res = await c.messages.parse({
+    model: MODEL,
+    max_tokens: 2048,
+    output_config: { effort: "low", format: zodOutputFormat(TopicPick) },
+    system: `You organise a WhatsApp help menu for ${mvno.name}. From the articles, pick the ones that belong under the menu topic, most useful first, at most 9. Never pick two articles about the same thing. For each: id exactly as given; label: a short name for the service, at most 24 characters (e.g. "Emergency travel doc"); description: at most 72 characters. Pick none if nothing fits.`,
+    messages: [{ role: "user", content: `Menu topic: ${topic}\n\nArticles:\n${articles.map((a) => `[${a.id}] ${a.title}: ${a.body.slice(0, 160).replace(/\s+/g, " ")}`).join("\n")}` }],
+  });
+  await recordAiUsage(res, { kind: "triage", mvnoId: mvno.id });
+  const valid = new Set(articles.map((a) => a.id));
+  const items = (res.parsed_output?.items ?? [])
+    .filter((i) => valid.has(i.id))
+    .slice(0, 9)
+    .map((i) => ({ id: i.id, label: i.label.trim().slice(0, 24), description: i.description.trim().slice(0, 72) }));
+  topicCache.set(key, { at: Date.now(), items });
+  return items;
 }
 
 export async function triage(history: Message[], kind: AiKind = "triage"): Promise<TriageResult | null> {
