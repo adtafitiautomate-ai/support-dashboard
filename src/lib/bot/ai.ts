@@ -524,6 +524,14 @@ export async function readAppointmentDates(mvno: Mvno, text: string) {
   return res.parsed_output ?? null;
 }
 
+/** Shortens to a WhatsApp limit at a word boundary ("Apply for dual citizenship" → "Apply for dual"). */
+const fitWords = (s: string, max: number) => {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max + 1).replace(/\s+\S*$/, "");
+  return cut.length <= max && cut.length >= max / 2 ? cut : t.slice(0, max);
+};
+
 const TopicPick = z.object({ items: z.array(z.object({ id: z.string(), label: z.string(), description: z.string() })) });
 export type TopicItem = z.infer<typeof TopicPick>["items"][number];
 const topicCache = new Map<string, { at: number; items: TopicItem[] }>();
@@ -557,7 +565,7 @@ export async function topicOptions(mvno: Mvno, topic: string): Promise<TopicItem
     model: MODEL,
     max_tokens: 2048,
     output_config: { effort: "low", format: zodOutputFormat(TopicPick) },
-    system: `You organise a WhatsApp help menu for ${mvno.name}. From the articles, pick the ones that belong under the menu topic, most useful first, at most 9. Never pick two articles about the same thing. For each: id exactly as given; label: a short name for the service, at most 24 characters (e.g. "Emergency travel doc"); description: at most 72 characters. Pick none if nothing fits.`,
+    system: `You organise a WhatsApp help menu for ${mvno.name}. From the articles, pick the ones that belong under the menu topic, most useful first, at most 9. Never pick two articles about the same thing. For each: id exactly as given; label: a short name for the service, STRICTLY at most 24 characters including spaces (e.g. "Emergency travel doc", "Apply for dual citizen."): shorten words rather than exceed; description: at most 72 characters. Pick none if nothing fits.`,
     messages: [{ role: "user", content: `Menu topic: ${topic}\n\nArticles:\n${articles.map((a) => `[${a.id}] ${a.title}: ${a.body.slice(0, 160).replace(/\s+/g, " ")}`).join("\n")}` }],
   });
   await recordAiUsage(res, { kind: "triage", mvnoId: mvno.id });
@@ -565,7 +573,7 @@ export async function topicOptions(mvno: Mvno, topic: string): Promise<TopicItem
   const items = (res.parsed_output?.items ?? [])
     .filter((i) => valid.has(i.id))
     .slice(0, 9)
-    .map((i) => ({ id: i.id, label: i.label.trim().slice(0, 24), description: i.description.trim().slice(0, 72) }));
+    .map((i) => ({ id: i.id, label: fitWords(i.label, 24), description: fitWords(i.description, 72) }));
   topicCache.set(key, { at: Date.now(), items });
   return items;
 }
