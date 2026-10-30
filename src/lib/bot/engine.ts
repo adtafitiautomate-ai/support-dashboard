@@ -381,8 +381,11 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
       ],
     });
   }
-  if (ctx.conv.status === "bot") {
-    await updateConversation(ctx.conv.id, { bot_state: { ...ctx.conv.bot_state, ai_turns: turns } }).catch(() => undefined);
+  // Re-read the state: the tools above may have saved a new step (e.g. the name for "Notify me"),
+  // and writing back ctx.conv's older copy would erase it.
+  const { data: now } = await supabaseAdmin().from("conversations").select("status, bot_state").eq("id", ctx.conv.id).maybeSingle();
+  if (now?.status === "bot") {
+    await updateConversation(ctx.conv.id, { bot_state: { ...now.bot_state, ai_turns: turns } }).catch(() => undefined);
   }
 }
 
