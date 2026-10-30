@@ -2,6 +2,8 @@ import { connection, type NextRequest } from "next/server";
 import { errorResponse, HttpError, requireAgent } from "@/lib/inbox/auth";
 import { buildReport, REPORTS, toCsv, type ReportType } from "@/lib/reports";
 import { audit, enforce, LIMITS } from "@/lib/security";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { modulesOf, type ModuleKey } from "@/lib/modules";
 
 /** GET /api/reports?type=summary&mvno=<id|all>&from=YYYY-MM-DD&to=YYYY-MM-DD&format=json|csv */
 export async function GET(req: NextRequest) {
@@ -28,7 +30,9 @@ export async function GET(req: NextRequest) {
 
     const toExclusive = new Date(`${to}T00:00:00Z`);
     toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
-    const report = await buildReport(type, { mvnoIds, from: `${from}T00:00:00Z`, to: toExclusive.toISOString() });
+    const { data: tenants } = await supabaseAdmin().from("mvnos").select("kind, modules").in("id", mvnoIds);
+    const modules = new Set<ModuleKey>((tenants ?? []).flatMap((m) => [...modulesOf(m)]));
+    const report = await buildReport(type, { mvnoIds, from: `${from}T00:00:00Z`, to: toExclusive.toISOString(), modules });
 
     if (p.get("format") === "csv") {
       // Exports contain customer data: record who took what (data-protection accountability).

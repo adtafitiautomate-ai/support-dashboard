@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, MapPin, Package, Phone, RefreshCw, Smartphone, Sparkles, Tag, Wallet, X } from "lucide-react";
+import { BellRing, CalendarCheck, IdCard, Loader2, MapPin, Package, Phone, RefreshCw, Smartphone, Sparkles, Tag, Wallet, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { upsertContact, upsertConversation, useStore } from "@/lib/store";
 import type { Conversation, Delivery, Recharge } from "@/lib/types";
 import { api, Avatar, Badge, cx, relTime, useNow } from "@/components/ui";
 import { formatData, formatMoney, formatPhone } from "@/lib/format";
 import { useWorkspace } from "@/components/workspace";
+import { modulesOf } from "@/lib/modules";
 
 type Account =
   | { connected: false; currency: string }
@@ -19,6 +20,10 @@ type Account =
     };
 
 type Tab = "overview" | "account" | "history";
+type Appt = { id: string; service: string; preferred: string | null; full_name: string | null; status: string; scheduled_at: string | null; created_at: string };
+type Watch = { id: string; full_name: string; status: "waiting" | "notified" | "needs_template"; created_at: string; notified_at: string | null };
+type IdCheck = { id: string; body: string; created_at: string };
+const APPT_TONE: Record<string, "green" | "amber" | "red" | "neutral" | "blue"> = { requested: "amber", confirmed: "green", completed: "blue", no_show: "red", cancelled: "neutral" };
 const DELIVERY_STATUSES: Delivery["status"][] = ["requested", "scheduled", "out_for_delivery", "delivered", "failed", "cancelled"];
 
 export function ContextPanel({ conversation: c }: { conversation: Conversation }) {
@@ -31,15 +36,31 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
   const [recharges, setRecharges] = useState<Recharge[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [history, setHistory] = useState<Conversation[]>([]);
+  const [appts, setAppts] = useState<Appt[]>([]);
+  const [watch, setWatch] = useState<Watch[]>([]);
+  const [idChecks, setIdChecks] = useState<IdCheck[]>([]);
+  // What this tenant's Account tab shows (a string keeps the effect's dependency stable).
+  const modKey = mvno ? [...modulesOf(mvno)].sort().join(",") : "";
   const [summarizing, setSummarizing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
 
   useEffect(() => {
     const supabase = supabaseBrowser();
+    const mods = new Set(modKey.split(","));
     const load = () => {
-      void supabase.from("recharges").select("*").eq("contact_id", c.contact_id).order("created_at", { ascending: false }).limit(5).then(({ data }) => setRecharges(data ?? []));
-      void supabase.from("deliveries").select("*").eq("contact_id", c.contact_id).order("created_at", { ascending: false }).limit(5).then(({ data }) => setDeliveries(data ?? []));
+      if (mods.has("topups")) void supabase.from("recharges").select("*").eq("contact_id", c.contact_id).order("created_at", { ascending: false }).limit(5).then(({ data }) => setRecharges(data ?? []));
+      if (mods.has("deliveries")) void supabase.from("deliveries").select("*").eq("contact_id", c.contact_id).order("created_at", { ascending: false }).limit(5).then(({ data }) => setDeliveries(data ?? []));
+      if (mods.has("appointments"))
+        void supabase
+          .from("appointments")
+          .select("id, service, preferred, full_name, status, scheduled_at, created_at")
+          .eq("contact_id", c.contact_id)
+          .order("created_at", { ascending: false })
+          .limit(5)
+          .then(({ data }) => setAppts(data ?? []));
+      if (mods.has("waiting_list") || mods.has("id_register"))
+        void supabase.from("id_watch").select("id, full_name, status, created_at, notified_at").eq("contact_id", c.contact_id).order("created_at", { ascending: false }).then(({ data }) => setWatch(data ?? []));
     };
     load();
     void supabase
@@ -48,15 +69,30 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
       .eq("contact_id", c.contact_id)
       .order("created_at", { ascending: false })
       .limit(10)
-      .then(({ data }) => setHistory(data ?? []));
-    void fetch(`/api/contacts/${c.contact_id}/account`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setAccount);
-    // Live: refresh when this customer's recharges / deliveries change.
+      .then(({ data }) => {
+        setHistory(data ?? []);
+        // The bot notes every ID check in the chat ("National ID check for "…": found …").
+        if (mods.has("id_register") && data?.length)
+          void supabase
+            .from("messages")
+            .select("id, body, created_at")
+            .in("conversation_id", data.map((h) => h.id))
+            .eq("type", "event")
+            .like("body", "National ID check for%")
+            .order("created_at", { ascending: false })
+            .limit(5)
+            .then(({ data: m }) => setIdChecks((m ?? []) as IdCheck[]));
+      });
+    if (mods.has("billing"))
+      void fetch(`/api/contacts/${c.contact_id}/account`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then(setAccount);
+    // Live: refresh when this customer's records change.
     return onEvent((table, record) => {
-      if ((table === "recharges" || table === "deliveries") && record.contact_id === c.contact_id) load();
+      if (["recharges", "deliveries", "appointments", "id_watch"].includes(table) && record.contact_id === c.contact_id) load();
     });
-  }, [c.contact_id, onEvent]);
+  }, [c.contact_id, onEvent, modKey]);
+  const mods = new Set(modKey.split(","));
 
   if (!contact) return null;
 
@@ -98,7 +134,8 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
           <Avatar name={contact.name ?? contact.wa_id} size={76} />
           <div className="mt-2.5 text-[15px] font-semibold">{contact.name ?? "Unknown customer"}</div>
           <div className="text-xs text-muted">
-            {contact.plan ?? "Prepaid"} · {mvno?.name}
+            {mods.has("billing") && `${contact.plan ?? "Prepaid"} · `}
+            {mvno?.name}
           </div>
         </div>
 
@@ -191,6 +228,76 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
 
         {tab === "account" && (
           <div className="space-y-3">
+            {mods.has("appointments") && (
+              <Section icon={<CalendarCheck className="size-3.5" />} title="Appointments">
+                {appts.length === 0 && <div className="text-xs text-muted">None yet</div>}
+                <ul className="space-y-2">
+                  {appts.map((a) => (
+                    <li key={a.id} className="rounded-xl bg-surface p-2 text-[13px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{a.service}</span>
+                        <Badge tone={APPT_TONE[a.status] ?? "neutral"}>{a.status.replace("_", " ")}</Badge>
+                      </div>
+                      <div className="text-xs text-muted">
+                        {a.scheduled_at
+                          ? new Date(a.scheduled_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: mvno?.business_hours?.tz })
+                          : `Asked for: ${a.preferred ?? "–"}`}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <a href="/appointments" className="mt-2 block text-xs text-muted hover:text-ink">
+                  Open appointments →
+                </a>
+              </Section>
+            )}
+
+            {(mods.has("waiting_list") || mods.has("id_register")) && (
+              <Section icon={<BellRing className="size-3.5" />} title="ID waiting list">
+                {watch.length === 0 && <div className="text-xs text-muted">Not on the waiting list</div>}
+                <ul className="space-y-1.5">
+                  {watch.map((w) => (
+                    <li key={w.id} className="flex flex-wrap items-center gap-1.5 text-[13px]">
+                      <span className="font-medium">{w.full_name}</span>
+                      {w.status === "waiting" ? (
+                        <Badge tone="amber">Waiting since {new Date(w.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</Badge>
+                      ) : w.status === "notified" ? (
+                        <Badge tone="green">Arrived · told</Badge>
+                      ) : (
+                        <Badge tone="red">Arrived · not told yet</Badge>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
+            {mods.has("id_register") && (
+              <Section icon={<IdCard className="size-3.5" />} title="ID checks">
+                {idChecks.length === 0 && <div className="text-xs text-muted">No checks yet</div>}
+                <ul className="space-y-1.5">
+                  {idChecks.map((m) => {
+                    const [, name, result] = /^National ID check for "(.*)": (.*)$/.exec(m.body) ?? [];
+                    return (
+                      <li key={m.id} className="flex items-center gap-2 text-[13px]">
+                        <span className={cx("size-1.5 shrink-0 rounded-full", result?.startsWith("found") ? "bg-emerald-500" : "bg-amber-500")} />
+                        <span className="min-w-0 flex-1 truncate">
+                          {name ?? m.body}
+                          <span className="block text-[11px] text-muted">{result === "none" ? "not on the list" : result}</span>
+                        </span>
+                        <span className="text-[11px] text-muted">{relTime(m.created_at, now)}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Section>
+            )}
+
+            {!["billing", "topups", "deliveries", "appointments", "waiting_list", "id_register"].some((k) => mods.has(k)) && (
+              <p className="py-6 text-center text-xs text-muted">Nothing to show for this customer.</p>
+            )}
+
+            {mods.has("billing") && (
             <Section icon={<Wallet className="size-3.5" />} title="Live balance">
               {!account ? (
                 <div className="h-16 animate-pulse rounded-xl bg-surface" />
@@ -216,7 +323,9 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
                 </>
               )}
             </Section>
+            )}
 
+            {mods.has("topups") && (
             <Section icon={<Wallet className="size-3.5" />} title="Recent top-ups">
               {recharges.length === 0 && <div className="text-xs text-muted">None yet</div>}
               <ul className="space-y-2">
@@ -234,7 +343,9 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
                 ))}
               </ul>
             </Section>
+            )}
 
+            {mods.has("deliveries") && (
             <Section icon={<Package className="size-3.5" />} title="Deliveries">
               {deliveries.length === 0 && <div className="text-xs text-muted">None</div>}
               <ul className="space-y-2">
@@ -260,6 +371,7 @@ export function ContextPanel({ conversation: c }: { conversation: Conversation }
                 ))}
               </ul>
             </Section>
+            )}
           </div>
         )}
 

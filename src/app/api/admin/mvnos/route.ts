@@ -6,6 +6,7 @@ import { forgetMvno } from "@/lib/inbox/service";
 import { setMvnoToken } from "@/lib/wa-tokens";
 import { audit, enforce, LIMITS } from "@/lib/security";
 import { DEFAULT_GENERAL_MENU } from "@/lib/menu";
+import { MODULE_KEYS } from "@/lib/modules";
 
 const Fields = z.object({
   name: z.string().trim().min(2).max(60),
@@ -29,6 +30,7 @@ const Fields = z.object({
   vtiger_enabled: z.boolean().optional(),
   strict_sources: z.boolean().optional(),
   emergency_message: z.string().trim().max(1000).optional().nullable(),
+  modules: z.array(z.enum(MODULE_KEYS as [string, ...string[]])).max(MODULE_KEYS.length).optional(),
 });
 
 const Body = z.discriminatedUnion("action", [

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarCheck, Check, Loader2, MessageSquareText, X } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { hasModule } from "@/lib/modules";
 import { formatPhone } from "@/lib/format";
 import { zonedToUtc } from "@/lib/hours";
 import { PageHeader } from "./app-shell";
@@ -38,7 +39,7 @@ const STATUS: Record<Appt["status"], { label: string; tone: "amber" | "green" | 
 /** Appointment requests from the bot (general-business tenants), confirmed by staff. */
 export function AppointmentsView() {
   const now = useNow(60_000);
-  const tenants = useStore((s) => [...s.mvnos.values()].filter((m) => m.kind === "general"));
+  const tenants = useStore((s) => [...s.mvnos.values()].filter((m) => hasModule(m, "appointments")));
   const [mvnoId, setMvnoId] = useState(tenants[0]?.id ?? "");
   const [view, setView] = useState<View>("requested");
   const [data, setData] = useState<{ appointments: Appt[]; counts: { requested: number; upcoming: number }; offices: string[] } | null>(null);

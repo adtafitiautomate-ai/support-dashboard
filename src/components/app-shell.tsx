@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChangePassword } from "./change-password";
-import { AlarmClock, CalendarCheck, IdCard, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
+import { AlarmClock, BellRing, CalendarCheck, IdCard, UserPlus, Users, BarChart3, Bell, BookOpen, ChevronDown, FileSpreadsheet, KeyRound, ShieldCheck, Ticket, Inbox, LogOut, Megaphone, Radio, Settings, Smartphone } from "lucide-react";
 import { claimFollowups, WorkspaceProvider, useWorkspace } from "./workspace";
 import { patch, useStore } from "@/lib/store";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { Avatar, cx, relTime, useNow } from "./ui";
 import { formatPhone } from "@/lib/format";
 import type { AgentStatus } from "@/lib/types";
+import { modulesOf, type ModuleKey } from "@/lib/modules";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -74,20 +75,19 @@ export function useAccess() {
     (s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && (m.role === "admin" || m.role === "supervisor")),
   );
   const isAdmin = useStore((s) => !!s.me?.is_platform_admin || s.memberships.some((m) => m.user_id === s.me?.id && m.role === "admin"));
-  // Pages depend on the kinds of tenant this person works with (mobile network vs general business).
-  const hasGeneral = useStore((s) => [...s.mvnos.values()].some((m) => m.kind === "general"));
-  const hasTelecom = useStore((s) => [...s.mvnos.values()].some((m) => m.kind !== "general"));
-  return { isSuper, isManager, isAdmin, hasGeneral, hasTelecom };
+  // Pages depend on the modules of the tenants this person works with (a string keeps the selector stable).
+  const moduleList = useStore((s) => [...new Set([...s.mvnos.values()].flatMap((m) => [...modulesOf(m)]))].sort().join(","));
+  const modules = new Set(moduleList.split(",").filter(Boolean) as ModuleKey[]);
+  return { isSuper, isManager, isAdmin, modules };
 }
 
 /** Agents < supervisors (managers) < admins < super admins. */
-type NavFlags = { managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean; generalOnly?: boolean; telecomOnly?: boolean };
-const canSee = (item: NavFlags, a: { isSuper: boolean; isManager: boolean; isAdmin: boolean; hasGeneral: boolean; hasTelecom: boolean }) =>
+type NavFlags = { managersOnly?: boolean; adminsOnly?: boolean; superOnly?: boolean; module?: ModuleKey };
+const canSee = (item: NavFlags, a: { isSuper: boolean; isManager: boolean; isAdmin: boolean; modules: Set<ModuleKey> }) =>
   (!item.managersOnly || a.isManager) &&
   (!item.adminsOnly || a.isAdmin) &&
   (!item.superOnly || a.isSuper) &&
-  (!item.generalOnly || a.hasGeneral) &&
-  (!item.telecomOnly || a.hasTelecom);
+  (!item.module || a.modules.has(item.module));
 
 function Gate({ children }: { children: ReactNode }) {
   const { ready } = useWorkspace();
@@ -110,7 +110,12 @@ function Gate({ children }: { children: ReactNode }) {
         <div className="card max-w-sm p-8">
           <ShieldCheck className="mx-auto size-8 text-muted" />
           <h1 className="mt-3 text-lg font-semibold">No access</h1>
-          <p className="mt-1 text-sm text-muted">{page.label} is available to {page.superOnly ? "super admins" : page.adminsOnly ? "admins" : "supervisors and admins"}. Ask your admin if you need it.</p>
+          <p className="mt-1 text-sm text-muted">
+            {page.module && !access.modules.has(page.module)
+              ? `${page.label} isn't switched on for your organisation.`
+              : `${page.label} is available to ${page.superOnly ? "super admins" : page.adminsOnly ? "admins" : "supervisors and admins"}.`}{" "}
+            Ask your admin if you need it.
+          </p>
           <Link href="/inbox" className="mt-5 inline-flex rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white">
             Go to inbox
           </Link>
@@ -137,12 +142,13 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/tickets", label: "Tickets", icon: Ticket },
-  { href: "/appointments", label: "Appointments", icon: CalendarCheck, generalOnly: true },
-  { href: "/register", label: "ID register", icon: IdCard, generalOnly: true },
+  { href: "/appointments", label: "Appointments", icon: CalendarCheck, module: "appointments" },
+  { href: "/register", label: "ID register", icon: IdCard, module: "id_register" },
+  { href: "/waiting-list", label: "Waiting list", icon: BellRing, module: "waiting_list" },
   { href: "/dashboard", label: "Insights", icon: BarChart3, managersOnly: true },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet, managersOnly: true },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/audience", label: "Audience", icon: Megaphone, managersOnly: true, telecomOnly: true },
+  { href: "/audience", label: "Campaigns", icon: Megaphone, managersOnly: true, module: "campaigns" },
   { href: "/simulator", label: "Simulator", icon: Smartphone, adminsOnly: true },
   { href: "/settings", label: "Settings", icon: Settings, adminsOnly: true },
   { href: "/team", label: "Team", icon: Users, adminsOnly: true },

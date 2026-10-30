@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BellRing, FileUp, IdCard, Loader2, Search, Trash2, X } from "lucide-react";
+import { BellRing, FileUp, IdCard, Loader2, Search, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { hasModule } from "@/lib/modules";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { formatPhone } from "@/lib/format";
 import { PageHeader, useAccess } from "./app-shell";
 import { api, Badge, Button, cx, relTime, useNow } from "./ui";
 
@@ -38,7 +39,7 @@ const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numer
 export function IdRegisterView() {
   const now = useNow(60_000);
   const { isManager } = useAccess();
-  const tenants = useStore((s) => [...s.mvnos.values()].filter((m) => m.kind === "general"));
+  const tenants = useStore((s) => [...s.mvnos.values()].filter((m) => hasModule(m, "id_register")));
   const [mvnoId, setMvnoId] = useState(tenants[0]?.id ?? "");
   const [data, setData] = useState<{ batches: Batch[]; watch: Watch[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export function IdRegisterView() {
     return () => (clearTimeout(t), clearInterval(iv));
   }, [load, processing]);
 
-  if (!tenants.length) return <div className="grid h-full place-items-center p-6 text-sm text-muted">The ID register is for general-business tenants (e.g. an embassy).</div>;
+  if (!tenants.length) return <div className="grid h-full place-items-center p-6 text-sm text-muted">The ID register isn&apos;t switched on for your organisation.</div>;
 
   const ready = (data?.batches ?? []).filter((b) => b.status === "ready");
   const total = ready.reduce((n, b) => n + b.row_count, 0);
@@ -114,38 +115,14 @@ export function IdRegisterView() {
           </ul>
         )}
 
-        <h2 className="mt-6 mb-2 flex items-center gap-1.5 text-sm font-semibold">
-          <BellRing className="size-4" /> Waiting list
-        </h2>
-        <p className="mb-2 text-xs text-muted">Customers who asked to be told when their card arrives. Each new batch is checked against this list automatically.</p>
-        {!data?.watch.length ? (
-          <p className="card py-8 text-center text-sm text-muted">Nobody is waiting yet.</p>
-        ) : (
-          <ul className="card divide-y divide-line">
-            {data.watch.map((w) => (
-              <li key={w.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
-                <span className="font-medium">{w.full_name}</span>
-                {w.contact && <span className="text-xs text-muted">{formatPhone(w.contact.wa_id)}</span>}
-                {w.status === "waiting" ? (
-                  <Badge tone="amber">Waiting · {relTime(w.created_at, now)}</Badge>
-                ) : w.status === "notified" ? (
-                  <Badge tone="green">Told{w.batch ? ` · ${w.batch.label}` : ""}</Badge>
-                ) : (
-                  <Badge tone="red">Arrived{w.batch ? ` (${w.batch.label})` : ""}: couldn&apos;t message them</Badge>
-                )}
-                {isManager && (
-                  <button
-                    title="Remove from the list"
-                    onClick={() => api("/api/id-register", { action: "unwatch", mvnoId, watchId: w.id }).then(load, (e) => setError((e as Error).message))}
-                    className="ml-auto rounded-full p-1 text-muted hover:bg-zinc-100 hover:text-ink"
-                  >
-                    <X className="size-4" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <Link href="/waiting-list" className="card mt-6 flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-white/80">
+          <BellRing className="size-4 text-muted" />
+          <span className="flex-1">
+            <span className="font-medium">Waiting list</span>
+            <span className="block text-xs text-muted">{waiting} waiting or not yet told. Each new batch is checked against the list automatically.</span>
+          </span>
+          <span className="text-muted">→</span>
+        </Link>
       </div>
     </div>
   );

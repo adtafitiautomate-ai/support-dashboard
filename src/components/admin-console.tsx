@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Building2, Cpu, History, Mail, Check, Copy, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { patch } from "@/lib/store";
 import type { MemberRole, Mvno } from "@/lib/types";
+import { defaultModules, MODULE_KEYS, MODULES, modulesOf } from "@/lib/modules";
 import { PageHeader } from "./app-shell";
 import { api, Avatar, Badge, cx, relTime, useNow } from "./ui";
 import { ActivityLog } from "./admin-activity";
@@ -442,6 +443,7 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
     promos: initial.ussd_codes?.promos ?? "",
     kind: (initial.kind ?? "telecom") as "telecom" | "general",
     vtiger_enabled: initial.vtiger_enabled ?? false,
+    modules: [...modulesOf({ kind: initial.kind ?? "telecom", modules: initial.modules })],
   });
   const telecom = f.kind === "telecom";
   const [busy, setBusy] = useState(false);
@@ -483,7 +485,7 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
                 ["general", "General business"],
               ] as const
             ).map(([k, label]) => (
-              <button key={k} type="button" onClick={() => setF({ ...f, kind: k })} className={cx("rounded-lg py-1.5 transition", f.kind === k ? "bg-white shadow-sm" : "text-muted hover:text-ink")}>
+              <button key={k} type="button" onClick={() => setF({ ...f, kind: k, modules: isNew ? defaultModules(k) : f.modules })} className={cx("rounded-lg py-1.5 transition", f.kind === k ? "bg-white shadow-sm" : "text-muted hover:text-ink")}>
                 {label}
               </button>
             ))}
@@ -515,6 +517,24 @@ function MvnoForm({ initial, onClose, onSaved }: { initial: Partial<AdminMvno>; 
             <span className="block text-xs text-muted">Agents can create tickets in the shared vtiger CRM. Leave off for independent tenants.</span>
           </span>
         </label>
+        <L label="Features" hint="What staff see for this tenant: pages, inbox panel and reports. The bot follows the type above.">
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {MODULE_KEYS.map((k) => (
+              <label key={k} className="flex items-start gap-2 rounded-xl bg-zinc-50 px-2.5 py-2 text-sm ring-1 ring-black/5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={f.modules.includes(k)}
+                  onChange={(e) => setF({ ...f, modules: e.target.checked ? [...f.modules, k] : f.modules.filter((x) => x !== k) })}
+                />
+                <span>
+                  {MODULES[k].label}
+                  <span className="block text-xs text-muted">{MODULES[k].hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </L>
         {telecom && (
         <>
         <div className="grid grid-cols-2 gap-3">

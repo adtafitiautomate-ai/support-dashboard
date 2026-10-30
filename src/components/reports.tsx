@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Bot,
+  CalendarCheck,
   CalendarRange,
+  CircleHelp,
   Download,
   FileSpreadsheet,
   HeartHandshake,
+  IdCard,
   Loader2,
   Package,
   Printer,
@@ -18,6 +21,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { modulesOf, type ModuleKey } from "@/lib/modules";
 import { PageHeader } from "./app-shell";
 import { cx, Empty } from "./ui";
 
@@ -29,10 +33,13 @@ const TYPES = [
   { id: "reasons", label: "Contact reasons", hint: "Why customers get in touch", icon: Tags },
   { id: "sla", label: "SLA breaches", hint: "Chats answered late or not yet", icon: ShieldAlert },
   { id: "csat", label: "Customer satisfaction", hint: "Every rating customers gave", icon: HeartHandshake },
-  { id: "topups", label: "WhatsApp top-ups", hint: "Bundles & airtime sold in chat", icon: Wallet },
-  { id: "deliveries", label: "Deliveries", hint: "SIM delivery requests and status", icon: Package },
-] as const;
-type TypeId = (typeof TYPES)[number]["id"];
+  { id: "unanswered", label: "Unanswered questions", hint: "What the bot couldn't answer: articles to add", icon: CircleHelp },
+  { id: "appointments", label: "Appointments", hint: "Requests, confirmations and no-shows", icon: CalendarCheck, module: "appointments" },
+  { id: "national_id", label: "National ID checks", hint: "Names checked, found and not found", icon: IdCard, module: "id_register" },
+  { id: "topups", label: "WhatsApp top-ups", hint: "Bundles & airtime sold in chat", icon: Wallet, module: "topups" },
+  { id: "deliveries", label: "Deliveries", hint: "SIM delivery requests and status", icon: Package, module: "deliveries" },
+] as { id: string; label: string; hint: string; icon: typeof Wallet; module?: ModuleKey }[];
+type TypeId = string;
 
 const PRESETS = [
   { id: 7, label: "7 days" },
@@ -45,8 +52,12 @@ const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86_400_000));
 
 export function ReportsView() {
   const mvnos = useStore((s) => [...s.mvnos.values()]);
-  const [type, setType] = useState<TypeId>("summary");
+  const [picked, setType] = useState<TypeId>("summary");
   const [mvno, setMvno] = useState("all");
+  // Only the reports the chosen tenant(s) have modules for.
+  const moduleKey = [...new Set(mvnos.filter((m) => mvno === "all" || m.id === mvno).flatMap((m) => [...modulesOf(m)]))].sort().join(",");
+  const types = useMemo(() => TYPES.filter((t) => !t.module || moduleKey.split(",").includes(t.module)), [moduleKey]);
+  const type = types.some((t) => t.id === picked) ? picked : "summary";
   const [range, setRange] = useState(() => ({ from: daysAgo(29), to: daysAgo(0), preset: 30 as number | null }));
   const [data, setData] = useState<{ columns: string[]; rows: (string | number | null)[][] } | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -82,12 +93,12 @@ export function ReportsView() {
     };
   }, [query]);
 
-  const current = TYPES.find((t) => t.id === type)!;
+  const current = types.find((t) => t.id === type)!;
   const csvUrl = `/api/reports?${query}&format=csv`;
 
   function downloadAll() {
     // One CSV per report, staggered so the browser accepts each download.
-    TYPES.forEach((t, i) =>
+    types.forEach((t, i) =>
       setTimeout(() => {
         const a = document.createElement("a");
         a.href = `/api/reports?${new URLSearchParams({ type: t.id, mvno, from: range.from, to: range.to })}&format=csv`;
@@ -157,7 +168,7 @@ export function ReportsView() {
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         {/* Report types */}
         <nav className="card no-print h-fit p-2">
-          {TYPES.map(({ id, label, hint, icon: Icon }) => (
+          {types.map(({ id, label, hint, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setType(id)}

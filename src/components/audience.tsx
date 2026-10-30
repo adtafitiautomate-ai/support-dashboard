@@ -4,31 +4,39 @@ import { useEffect, useState } from "react";
 import { Download, Loader2, Megaphone, Plus, Search, Send, Users, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { toIntlPrefix, toLocalPrefix } from "@/lib/audience";
+import { hasModule } from "@/lib/modules";
 import { formatPhone } from "@/lib/format";
 import { PageHeader } from "./app-shell";
-import { CampaignsPanel } from "./campaigns";
+import { CampaignsPanel, type AudienceMode } from "./campaigns";
 import { api, Badge, Button, cx, Pager, relTime, useNow } from "./ui";
 
 type Row = { id: string; wa_id: string; name: string | null; created_at: string; last_seen_at: string | null; opted_out_at: string | null };
-type Data = { prefixes: string[]; contacts: Row[]; total: number; optedOut: number; pageSize: number };
+type Data = { ranges?: boolean; prefixes: string[]; contacts: Row[]; total: number; optedOut: number; pageSize: number };
+
+/** Opened from another page, e.g. /audience?mvno=…&campaign=id_untold (the waiting list's "Message…" buttons). */
+const linked = () => {
+  const p = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+  return { mvno: p?.get("mvno") ?? null, campaign: (p?.get("campaign") as AudienceMode | null) ?? null };
+};
 
 const field = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black/30";
 
-/** Customers who messaged from a number in the MVNO's own ranges: the campaign audience. */
+/** The campaign audience: customers who messaged the tenant (telecoms: from a number in their own ranges). */
 export function AudienceView() {
   const now = useNow(60_000);
   const isSuper = useStore((s) => !!s.me?.is_platform_admin);
   const mvnos = useStore((s) =>
-    [...s.mvnos.values()].filter((m) => m.kind !== "general" && (s.me?.is_platform_admin || s.memberships.some((x) => x.user_id === s.me?.id && x.mvno_id === m.id && x.role !== "agent"))),
+    [...s.mvnos.values()].filter((m) => hasModule(m, "campaigns") && (s.me?.is_platform_admin || s.memberships.some((x) => x.user_id === s.me?.id && x.mvno_id === m.id && x.role !== "agent"))),
   );
   const adminOf = useStore((s) => new Set(s.memberships.filter((x) => x.user_id === s.me?.id && x.role === "admin").map((x) => x.mvno_id)));
-  const [mvnoId, setMvnoId] = useState(mvnos[0]?.id ?? "");
+  const [link] = useState(linked);
+  const [mvnoId, setMvnoId] = useState(() => (link.mvno && mvnos.some((m) => m.id === link.mvno) ? link.mvno : (mvnos[0]?.id ?? "")));
   const [q, setQ] = useState("");
   const [query, setQuery] = useState({ key: "", page: 0 });
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const [tab, setTab] = useState<"customers" | "campaigns">("customers");
+  const [tab, setTab] = useState<"customers" | "campaigns">(link.campaign ? "campaigns" : "customers");
   // Ticked customers for a campaign (kept across pages and searches, cleared when switching tenant).
   const [picked, setPicked] = useState<{ key: string; ids: Set<string> }>({ key: "", ids: new Set() });
   const selected = picked.key === mvnoId ? picked.ids : new Set<string>();
@@ -41,6 +49,8 @@ export function AudienceView() {
   const [allCount, setAllCount] = useState<{ key: string; n: number }>({ key: "", n: 0 });
   const mvno = mvnos.find((m) => m.id === mvnoId);
   const canEdit = isSuper || adminOf.has(mvnoId);
+  // Telecoms need their number ranges first; other tenants reach anyone who messaged them.
+  const ready = !!data && (!data.ranges || data.prefixes.length > 0);
 
   const key = `${mvnoId}|${q}`;
   const page = query.key === key ? query.page : 0;
@@ -68,7 +78,7 @@ export function AudienceView() {
       <div className="mx-auto max-w-5xl">
         <PageHeader
           title="Audience"
-          subtitle="Customers who messaged you from your own number ranges, saved for campaigns"
+          subtitle={data && !data.ranges ? "Customers who messaged you, and messages sent to them" : "Customers who messaged you from your own number ranges, saved for campaigns"}
           actions={
             <div className="flex items-center gap-2">
               {mvnos.length > 1 && (
@@ -80,7 +90,7 @@ export function AudienceView() {
                   ))}
                 </select>
               )}
-              {!!data?.prefixes.length && (
+              {ready && (
                 <a
                   href={`/api/audience?mvno=${mvnoId}&format=csv`}
                   className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-md ring-1 ring-black/10 transition hover:bg-zinc-50"
@@ -94,7 +104,7 @@ export function AudienceView() {
 
         {error && <div className="mb-4 rounded-xl bg-red-50 px-4 py-2 text-sm text-danger ring-1 ring-red-200">{error}</div>}
 
-        {mvno && data && !!data.prefixes.length && (
+        {mvno && data && ready && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-full bg-white/70 p-1 text-[13px] font-medium ring-1 ring-black/5">
               {(
@@ -120,9 +130,11 @@ export function AudienceView() {
           </div>
         )}
 
-        {mvno && data && tab === "campaigns" && !!data.prefixes.length && (
+        {mvno && data && tab === "campaigns" && ready && (
           <CampaignsPanel
             key={mvnoId}
+            mvno={mvno}
+            preset={mvnoId === link.mvno ? link.campaign : null}
             mvnoId={mvnoId}
             mvnoName={mvno.name}
             canSend={canEdit}
@@ -132,20 +144,22 @@ export function AudienceView() {
           />
         )}
 
-        {mvno && data && (tab === "customers" || !data.prefixes.length) && (
+        {mvno && data && (tab === "customers" || !ready) && (
           <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
             <div className="space-y-4">
               <div className="card p-5">
-                <div className="text-xs font-medium text-muted">Customers in range</div>
+                <div className="text-xs font-medium text-muted">{data.ranges ? "Customers in range" : "Customers"}</div>
                 <div className="mt-1 text-3xl font-semibold tabular-nums">{(q ? "–" : data.total).toLocaleString()}</div>
                 <div className="mt-1 text-xs text-muted">
                   {data.optedOut} opted out (replied STOP), excluded from exports
                 </div>
               </div>
-              <Ranges key={mvnoId} mvnoId={mvnoId} prefixes={data.prefixes} canEdit={canEdit} onSaved={() => setReload((n) => n + 1)} />
+              {data.ranges && <Ranges key={mvnoId} mvnoId={mvnoId} prefixes={data.prefixes} canEdit={canEdit} onSaved={() => setReload((n) => n + 1)} />}
               <p className="px-1 text-xs leading-relaxed text-muted">
-                Every customer who messages {mvno.name} is kept for support; only numbers in these ranges appear here. WhatsApp only allows promotional
-                messages through approved templates, to people who agreed to receive them. Customers can reply STOP to opt out.
+                {data.ranges
+                  ? `Every customer who messages ${mvno.name} is kept for support; only numbers in these ranges appear here. `
+                  : `Everyone who has messaged ${mvno.name} on WhatsApp. `}
+                WhatsApp only allows promotional messages through approved templates, to people who agreed to receive them. Customers can reply STOP to opt out.
               </p>
             </div>
 
@@ -154,7 +168,7 @@ export function AudienceView() {
                 <Search className="size-4 text-muted" />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or number" className="h-10 flex-1 bg-transparent text-sm outline-none" />
               </div>
-              {!data.prefixes.length ? (
+              {!ready ? (
                 <div className="grid place-items-center py-14 text-center text-sm text-muted">
                   <Megaphone className="mb-2 size-6" />
                   No number ranges set yet.
@@ -224,7 +238,7 @@ export function AudienceView() {
                         {!data.contacts.length && (
                           <tr>
                             <td colSpan={5} className="px-3 py-10 text-center text-muted">
-                              {q ? "No customers match your search." : "No customers from these ranges have messaged yet."}
+                              {q ? "No customers match your search." : data.ranges ? "No customers from these ranges have messaged yet." : "Nobody has messaged yet."}
                             </td>
                           </tr>
                         )}

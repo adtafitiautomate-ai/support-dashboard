@@ -31,6 +31,7 @@ export interface Mvno {
   sim_delivery?: boolean;
   vtiger_enabled?: boolean; // escalate to the shared vtiger CRM (off by default)
   kind?: "telecom" | "general"; // general = not a mobile network (e.g. an embassy)
+  modules?: import("./modules").ModuleKey[] | null; // staff features (null = the defaults for the kind)
   menu_items?: import("./menu").MenuItem[];
   strict_sources?: boolean; // answers must cite a source page + last-verified date
   emergency_message?: string | null;

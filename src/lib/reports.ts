@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { formatMinutes } from "@/lib/format";
+import type { ModuleKey } from "@/lib/modules";
 
 export const REPORTS = {
   summary: "Executive summary",
@@ -12,8 +13,18 @@ export const REPORTS = {
   csat: "Customer satisfaction (CSAT)",
   topups: "WhatsApp top-ups",
   deliveries: "Deliveries",
+  appointments: "Appointments",
+  national_id: "National ID checks",
+  unanswered: "Questions the bot couldn't answer",
 } as const;
 export type ReportType = keyof typeof REPORTS;
+
+/** Reports that only make sense with a module (the rest are for everyone). */
+export const REPORT_MODULE: Partial<Record<ReportType, ModuleKey>> = { topups: "topups", deliveries: "deliveries", appointments: "appointments", national_id: "id_register" };
+
+/** The bot's reply when the knowledge base doesn't cover a question (sourced-answers tenants). */
+const CANT_CONFIRM = "I can't confirm that from our official information%";
+const ID_CHECK = /^National ID check for "(.*)": (.*)$/;
 
 export interface ReportResult {
   columns: string[];
@@ -24,6 +35,7 @@ interface Range {
   mvnoIds: string[];
   from: string; // ISO
   to: string; // ISO (exclusive)
+  modules: Set<ModuleKey>; // what the chosen tenants have between them (shapes the summary)
 }
 
 type Conv = {
@@ -90,9 +102,40 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
     case "summary": {
       const cs = await conversations(r);
       const human = cs.filter((c) => c.handoff_at);
-      const { data: rech } = await db.from("recharges").select("amount,status").in("mvno_id", r.mvnoIds).gte("created_at", r.from).lt("created_at", r.to);
+      const { data: rech } = r.modules.has("topups")
+        ? await db.from("recharges").select("amount,status").in("mvno_id", r.mvnoIds).gte("created_at", r.from).lt("created_at", r.to)
+        : { data: [] as { amount: number; status: string }[] };
       const ok = (rech ?? []).filter((x) => x.status === "success");
       const rated = cs.filter((c) => c.csat_score);
+      const extra: [string, string | number | null][] = [];
+      if (r.modules.has("topups")) {
+        extra.push(["WhatsApp top-ups (successful)", ok.length], ["WhatsApp top-up value", ok.reduce((s, x) => s + Number(x.amount), 0)], ["Failed top-ups", (rech ?? []).filter((x) => x.status === "failed").length]);
+      }
+      if (r.modules.has("appointments")) {
+        const { data: ap } = await db.from("appointments").select("status").in("mvno_id", r.mvnoIds).gte("created_at", r.from).lt("created_at", r.to);
+        const n = (s: string) => (ap ?? []).filter((a) => a.status === s).length;
+        extra.push(["Appointment requests", (ap ?? []).length], ["Appointments confirmed", n("confirmed") + n("completed") + n("no_show")], ["Appointments completed", n("completed")], ["No-shows", n("no_show")]);
+      }
+      if (r.modules.has("id_register")) {
+        const checks = await idChecks(r);
+        const { count: waiting } = await db.from("id_watch").select("id", { count: "exact", head: true }).in("mvno_id", r.mvnoIds).eq("status", "waiting");
+        const { count: told } = await db.from("id_watch").select("id", { count: "exact", head: true }).in("mvno_id", r.mvnoIds).eq("status", "notified").gte("notified_at", r.from).lt("notified_at", r.to);
+        extra.push(
+          ["National ID checks", checks.length],
+          ["ID found", checks.filter((c) => c.result.startsWith("found")).length],
+          ["ID not on the list yet", checks.filter((c) => c.result === "none").length],
+          ["People on the waiting list now", waiting ?? 0],
+          ["Told their ID arrived", told ?? 0],
+        );
+      }
+      const { count: unanswered } = await db
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .in("mvno_id", r.mvnoIds)
+        .eq("direction", "out")
+        .like("body", CANT_CONFIRM)
+        .gte("created_at", r.from)
+        .lt("created_at", r.to);
       return {
         columns: ["Metric", "Value"],
         rows: [
@@ -110,11 +153,86 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
           ["CSAT average (1–5)", avg(rated.map((c) => c.csat_score))],
           ["CSAT responses", rated.length],
           ["Negative-sentiment chats", cs.filter((c) => c.sentiment === "negative").length],
-          ["WhatsApp top-ups (successful)", ok.length],
-          ["WhatsApp top-up value", ok.reduce((s, x) => s + Number(x.amount), 0)],
-          ["Failed top-ups", (rech ?? []).filter((x) => x.status === "failed").length],
+          ["Questions the bot couldn't answer", unanswered ?? 0],
+          ...extra,
         ],
       };
+    }
+
+    case "appointments": {
+      const { data, error } = await db
+        .from("appointments")
+        .select("created_at,service,preferred,full_name,status,scheduled_at,office,staff_note,contact:contacts(name,wa_id),mvno:mvnos(name,business_hours),staff:profiles(full_name)")
+        .in("mvno_id", r.mvnoIds)
+        .gte("created_at", r.from)
+        .lt("created_at", r.to)
+        .order("created_at")
+        .limit(50_000);
+      if (error) throw error;
+      type A = { created_at: string; service: string; preferred: string | null; full_name: string | null; status: string; scheduled_at: string | null; office: string | null; staff_note: string | null; contact: { name: string | null; wa_id: string } | null; mvno: { name: string; business_hours: { tz?: string } | null } | null; staff: { full_name: string } | null };
+      const local = (iso: string | null, tz?: string) => (iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: tz || "Africa/Kampala" }) : null);
+      return {
+        columns: ["Requested", "Tenant", "Name", "WhatsApp", "Service", "Asked for", "Status", "Scheduled for (local time)", "Office", "Note to customer", "Handled by"],
+        rows: ((data ?? []) as unknown as A[]).map((x) => [
+          when(x.created_at),
+          x.mvno?.name ?? "",
+          x.full_name ?? x.contact?.name ?? "",
+          x.contact ? `+${x.contact.wa_id}` : "",
+          x.service,
+          x.preferred ?? "",
+          x.status.replace("_", " "),
+          local(x.scheduled_at, x.mvno?.business_hours?.tz),
+          x.office ?? "",
+          x.staff_note ?? "",
+          x.staff?.full_name ?? "",
+        ]),
+      };
+    }
+
+    case "national_id": {
+      const checks = await idChecks(r);
+      return {
+        columns: ["Date", "Tenant", "Customer", "WhatsApp", "Name checked", "Result"],
+        rows: checks.map((c) => [when(c.at), c.tenant, c.customer, c.wa ? `+${c.wa}` : "", c.name, c.result.startsWith("found") ? c.result.replace(/^found in /, "Found: ") : c.result === "none" ? "Not on the list yet" : c.result]),
+      };
+    }
+
+    case "unanswered": {
+      // Each "I can't confirm that…" reply, with the customer's message just before it.
+      const { data, error } = await db
+        .from("messages")
+        .select("conversation_id,created_at,conversation:conversations(contact:contacts(name,wa_id)),mvno:mvnos(name)")
+        .in("mvno_id", r.mvnoIds)
+        .eq("direction", "out")
+        .like("body", CANT_CONFIRM)
+        .gte("created_at", r.from)
+        .lt("created_at", r.to)
+        .order("created_at")
+        .limit(1000);
+      if (error) throw error;
+      type U = { conversation_id: string; created_at: string; conversation: { contact: { name: string | null; wa_id: string } | null } | null; mvno: { name: string } | null };
+      const list = (data ?? []) as unknown as U[];
+      const rows: (string | number | null)[][] = [];
+      for (let i = 0; i < list.length; i += 20) {
+        rows.push(
+          ...(await Promise.all(
+            list.slice(i, i + 20).map(async (u) => {
+              const { data: q } = await db
+                .from("messages")
+                .select("body")
+                .eq("conversation_id", u.conversation_id)
+                .eq("direction", "in")
+                .lte("created_at", u.created_at)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              const c = u.conversation?.contact;
+              return [when(u.created_at), u.mvno?.name ?? "", c?.name ?? "", c ? `+${c.wa_id}` : "", q?.body ?? ""];
+            }),
+          )),
+        );
+      }
+      return { columns: ["Date", "Tenant", "Customer", "WhatsApp", "What they asked"], rows };
     }
 
     case "conversations": {
@@ -270,6 +388,26 @@ export async function buildReport(type: ReportType, r: Range): Promise<ReportRes
       };
     }
   }
+}
+
+/** Every National ID check the bot noted in a chat (the bot writes one event per check). */
+async function idChecks(r: Range) {
+  const { data, error } = await supabaseAdmin()
+    .from("messages")
+    .select("body,created_at,conversation:conversations(contact:contacts(name,wa_id)),mvno:mvnos(name)")
+    .in("mvno_id", r.mvnoIds)
+    .eq("type", "event")
+    .like("body", "National ID check for%")
+    .gte("created_at", r.from)
+    .lt("created_at", r.to)
+    .order("created_at")
+    .limit(50_000);
+  if (error) throw error;
+  type E = { body: string; created_at: string; conversation: { contact: { name: string | null; wa_id: string } | null } | null; mvno: { name: string } | null };
+  return ((data ?? []) as unknown as E[]).map((e) => {
+    const [, name = "", result = ""] = ID_CHECK.exec(e.body) ?? [];
+    return { at: e.created_at, tenant: e.mvno?.name ?? "", customer: e.conversation?.contact?.name ?? "", wa: e.conversation?.contact?.wa_id ?? "", name, result };
+  });
 }
 
 export function toCsv(r: ReportResult) {

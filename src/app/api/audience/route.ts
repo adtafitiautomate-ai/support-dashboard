@@ -5,8 +5,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { audit, enforce, LIMITS } from "@/lib/security";
 import { SIMULATOR_TAG } from "@/lib/inbox/simulation";
 import { toIntlPrefix } from "@/lib/audience";
+import { usesNumberRanges } from "@/lib/modules";
 
-// Campaign audience: customers who messaged the MVNO from a number in its own ranges.
+// Campaign audience: customers who messaged the tenant (telecoms: only from a number in their own ranges).
 
 const PAGE_SIZE = 25;
 
@@ -26,10 +27,11 @@ export async function GET(req: NextRequest) {
     const { profile, mvno } = await requireMvnoManager(mvnoId);
     const db = supabaseAdmin();
     // Read fresh (getMvno is cached) so a just-saved range applies immediately.
-    const { data: row } = await db.from("mvnos").select("number_prefixes").eq("id", mvnoId).single();
+    const { data: row } = await db.from("mvnos").select("number_prefixes, kind").eq("id", mvnoId).single();
     const prefixes: string[] = row?.number_prefixes ?? [];
+    const ranges = usesNumberRanges({ kind: row?.kind });
     const csv = sp.get("format") === "csv";
-    if (!prefixes.length) return csv ? new Response("No number ranges set", { status: 400 }) : Response.json({ prefixes, contacts: [], total: 0, optedOut: 0 });
+    if (ranges && !prefixes.length) return csv ? new Response("No number ranges set", { status: 400 }) : Response.json({ ranges, prefixes, contacts: [], total: 0, optedOut: 0 });
 
     const q = (sp.get("q") ?? "").trim().slice(0, 60);
     const page = Math.max(0, Number(sp.get("page")) || 0);
@@ -39,8 +41,8 @@ export async function GET(req: NextRequest) {
         .from("contacts")
         .select("id, wa_id, name, created_at, last_seen_at, opted_out_at", { count: "exact" })
         .eq("mvno_id", mvnoId)
-        .or(inRange)
         .not("tags", "cs", `{${SIMULATOR_TAG}}`);
+      if (ranges) b = b.or(inRange);
       if (q) {
         const digits = q.replace(/\D/g, "");
         const name = q.replace(/[^\p{L}\p{N} ]/gu, "");
@@ -74,13 +76,10 @@ export async function GET(req: NextRequest) {
 
     const { data, count, error } = await base().range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
     if (error) throw error;
-    const { count: optedOut } = await db
-      .from("contacts")
-      .select("id", { count: "exact", head: true })
-      .eq("mvno_id", mvnoId)
-      .or(inRange)
-      .not("opted_out_at", "is", null);
-    return Response.json({ prefixes, contacts: data ?? [], total: count ?? 0, optedOut: optedOut ?? 0, pageSize: PAGE_SIZE });
+    let opted = db.from("contacts").select("id", { count: "exact", head: true }).eq("mvno_id", mvnoId).not("opted_out_at", "is", null);
+    if (ranges) opted = opted.or(inRange);
+    const { count: optedOut } = await opted;
+    return Response.json({ ranges, prefixes, contacts: data ?? [], total: count ?? 0, optedOut: optedOut ?? 0, pageSize: PAGE_SIZE });
   } catch (e) {
     return errorResponse(e);
   }
