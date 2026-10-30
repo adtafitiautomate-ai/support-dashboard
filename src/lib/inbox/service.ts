@@ -419,6 +419,7 @@ export async function handoff(mvno: Mvno, conv: Conversation, contact: Contact, 
   let updated = await updateConversation(conv.id, {
     status: "open",
     handoff_at: now.toISOString(),
+    first_response_at: null, // a new handover starts a new wait (and a new SLA)
     sla_due_at: new Date(now.getTime() + mvno.sla_first_response_mins * 60_000).toISOString(),
     priority: input.priority ?? conv.priority,
     category: input.category ?? conv.category,

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Bot, Clock, Inbox, Package, Smile, Users, Wallet } from "lucide-react";
+import { AlertTriangle, BellRing, Bot, CalendarCheck, Clock, Inbox, Package, Smile, Users, Wallet } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { useStore } from "@/lib/store";
 import { useWorkspace } from "./workspace";
 import { Avatar, cx } from "./ui";
 import { formatMinutes, formatMoney } from "@/lib/format";
+import { modulesOf } from "@/lib/modules";
 
 interface Stats {
   open: number;
@@ -71,6 +72,35 @@ export function Insights() {
   }, [mvno, days, onEvent]);
 
   const currency = (mvno !== "all" && mvnos.find((m) => m.id === mvno)?.currency) || mvnos[0]?.currency || "";
+  // Cards follow the tenant's features (all tenants: any tenant's). Joined so the effect below sees a stable value.
+  const modKey = [...new Set((mvno === "all" ? mvnos : mvnos.filter((m) => m.id === mvno)).flatMap((m) => [...modulesOf(m)]))].sort().join(",");
+  const mods = new Set(modKey.split(","));
+  const idKey = mvnos.map((m) => m.id).join(",");
+
+  // Appointment / waiting-list counts aren't in dashboard_stats: count them directly (RLS limits to the caller's tenants).
+  const [extra, setExtra] = useState<{ key: string; appts: number; waiting: number; untold: number } | null>(null);
+  useEffect(() => {
+    const has = new Set(modKey.split(","));
+    if (!has.has("appointments") && !has.has("waiting_list")) return;
+    const db = supabaseBrowser();
+    const ids = mvno === "all" ? idKey.split(",") : [mvno];
+    const count = async (p: PromiseLike<{ count: number | null }>) => (await p).count ?? 0;
+    const watch = (status: string) => count(db.from("id_watch").select("id", { count: "exact", head: true }).in("mvno_id", ids).eq("status", status));
+    void Promise.all([
+      has.has("appointments")
+        ? count(
+            db
+              .from("appointments")
+              .select("id", { count: "exact", head: true })
+              .in("mvno_id", ids)
+              .or(`status.eq.requested,and(status.eq.confirmed,scheduled_at.gte.${new Date().toISOString()})`),
+          )
+        : 0,
+      has.has("waiting_list") ? watch("waiting") : 0,
+      has.has("waiting_list") ? watch("needs_template") : 0,
+    ]).then(([appts, waiting, untold]) => setExtra({ key: `${mvno}|${modKey}`, appts, waiting, untold }));
+  }, [mvno, modKey, idKey]);
+  const counts = extra?.key === `${mvno}|${modKey}` ? extra : null;
   const containment = stats && stats.conversations ? Math.round((stats.bot_contained / stats.conversations) * 100) : 0;
 
   return (
@@ -126,8 +156,22 @@ export function Insights() {
               <Tile icon={<Clock />} label="Avg first response" value={fmtDuration(stats.avg_first_response_secs)} sub={`Avg ticket resolution ${formatMinutes(stats.avg_resolution_mins)}`} />
               <Tile icon={<Bot />} label="Bot containment" value={`${containment}%`} sub={`${stats.bot_contained} of ${stats.conversations} without an agent`} />
               <Tile icon={<Smile />} label="CSAT" value={stats.csat_avg ? `${stats.csat_avg}/5` : "–"} sub={`${stats.csat_count} ratings`} />
-              <Tile icon={<Wallet />} label="WhatsApp top-ups" value={formatMoney(stats.recharge_total, currency)} sub={`${stats.recharge_count} successful`} />
-              <Tile icon={<Package />} label="Active deliveries" value={stats.deliveries_active} sub="SIM / eSIM / devices" />
+              {mods.has("topups") && (
+                <Tile icon={<Wallet />} label="WhatsApp top-ups" value={formatMoney(stats.recharge_total, currency)} sub={`${stats.recharge_count} successful`} />
+              )}
+              {mods.has("deliveries") && <Tile icon={<Package />} label="Active deliveries" value={stats.deliveries_active} sub="SIM / eSIM / devices" />}
+              {mods.has("appointments") && (
+                <Tile icon={<CalendarCheck />} label="Upcoming appointments" value={counts ? counts.appts : "…"} sub="Requested or confirmed, not yet held" />
+              )}
+              {mods.has("waiting_list") && (
+                <Tile
+                  icon={<BellRing />}
+                  label="Waiting for ID"
+                  value={counts ? counts.waiting : "…"}
+                  sub={counts?.untold ? `${counts.untold} arrived, not told yet` : "On the waiting list"}
+                  status={counts?.untold ? "critical" : undefined}
+                />
+              )}
               <Tile icon={<Users />} label="With bot now" value={stats.with_bot} sub="Self-serving customers" />
             </div>
 
@@ -183,7 +227,7 @@ export function Insights() {
 }
 
 function fmtDuration(secs: number) {
-  if (!secs) return "–";
+  if (!secs || secs < 0) return "–";
   if (secs < 60) return `${secs}s`;
   if (secs < 3600) return `${Math.round(secs / 60)}m`;
   return `${(secs / 3600).toFixed(1)}h`;
