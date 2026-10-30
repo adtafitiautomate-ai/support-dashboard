@@ -61,7 +61,7 @@ export async function resolveRecipients(mvnoId: string, prefixes: string[], cont
 export type Audience =
   | { mode: "all" }
   | { mode: "selected"; contactIds: string[] }
-  | { mode: "waiting" } // on the ID waiting list, card not arrived yet
+  | { mode: "waiting"; clear?: boolean } // on the ID waiting list, card not arrived yet
   | { mode: "id_untold" } // card arrived, couldn't tell them yet (outside 24h, no template)
   | { mode: "id_arrived" } // card arrived (told or not)
   | { mode: "appointments"; date: string }; // confirmed appointment on this day (tenant's time zone)
@@ -187,6 +187,8 @@ export async function processCampaign(campaignId: string, budgetMs = 45_000) {
         : templatePayload(t!, c.variables, r, headerLink);
     // Telling people their ID arrived takes them off the "not told yet" list.
     const idNews = c.audience?.mode === "id_untold" || c.audience?.mode === "id_arrived";
+    // A message that closes their request (e.g. "your name isn't in the system") takes them off the list.
+    const clearWaiting = c.audience?.mode === "waiting" && c.audience.clear === true;
 
     while (Date.now() - started < budgetMs) {
       const { data: cur } = await db.from("campaigns").select("status").eq("id", c.id).single();
@@ -210,6 +212,9 @@ export async function processCampaign(campaignId: string, budgetMs = 45_000) {
                   .eq("mvno_id", c.mvno_id)
                   .eq("contact_id", r.contact_id)
                   .eq("status", "needs_template");
+              }
+              if (clearWaiting && r.contact_id) {
+                await db.from("id_watch").delete().eq("mvno_id", c.mvno_id).eq("contact_id", r.contact_id).eq("status", "waiting");
               }
             } catch (e) {
               await db.from("campaign_recipients").update({ status: "failed", error: (e as Error).message.slice(0, 300), updated_at: new Date().toISOString() }).eq("id", r.id);

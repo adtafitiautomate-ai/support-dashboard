@@ -266,11 +266,14 @@ function CampaignBuilder({
   const [apptDate, setApptDate] = useState(tomorrow);
   const [kind, setKind] = useState<"template" | "text">("template");
   const [text, setText] = useState("");
+  const [clearWaiting, setClearWaiting] = useState(false);
   // How many this audience reaches, and how many wrote in the last 24 hours (all a plain message can reach).
   const [reach, setReach] = useState<{ key: string; total: number; inWindow: number } | null>(null);
   const idList = hasModule(mvno, "waiting_list") || hasModule(mvno, "id_register");
-  const audienceBody = audience === "selected" ? { mode: "selected", contactIds: selected } : audience === "appointments" ? { mode: "appointments", date: apptDate } : { mode: audience };
+  const audienceBody =
+    audience === "selected" ? { mode: "selected", contactIds: selected } : audience === "appointments" ? { mode: "appointments", date: apptDate } : { mode: audience };
   const reachKey = JSON.stringify(audienceBody);
+  const sendAudience = audience === "waiting" && clearWaiting ? { ...audienceBody, clear: true } : audienceBody;
   useEffect(() => {
     if (audience === "selected" && !selected.length) return;
     const t = setTimeout(() => {
@@ -362,7 +365,7 @@ function CampaignBuilder({
       await api(
         "/api/campaigns",
         kind === "text"
-          ? { mvnoId, name: name.trim(), kind: "text", text: text.trim(), audience: audienceBody }
+          ? { mvnoId, name: name.trim(), kind: "text", text: text.trim(), audience: sendAudience }
           : {
               mvnoId,
               name: name.trim(),
@@ -371,7 +374,7 @@ function CampaignBuilder({
               language: t!.language,
               variables: vars,
               headerMedia: media ? { path: media.path, mime: media.mime } : undefined,
-              audience: audienceBody,
+              audience: sendAudience,
             },
       );
       onSent();
@@ -559,6 +562,15 @@ function CampaignBuilder({
               <button onClick={onClearSelection} className="mt-1 text-xs text-muted hover:text-ink">
                 Clear selection
               </button>
+            )}
+            {audience === "waiting" && (
+              <label className="mt-2 flex items-start gap-2 text-xs text-ink">
+                <input type="checkbox" className="mt-0.5" checked={clearWaiting} onChange={(e) => setClearWaiting(e.target.checked)} />
+                <span>
+                  Take them off the waiting list once it&apos;s sent
+                  <span className="block text-muted">Tick this when the message closes their request (e.g. their name isn&apos;t in the system). Leave it off for progress updates.</span>
+                </span>
+              </label>
             )}
             {audience === "appointments" && (
               <input type="date" className={cx(field, "mt-2 w-48")} value={apptDate} onChange={(e) => setApptDate(e.target.value)} aria-label="Appointment date" />
