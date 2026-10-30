@@ -707,13 +707,30 @@ async function topicMenu(ctx: F.FlowCtx, title: string, hint?: string | null, ex
   });
 }
 
+const FILE_NAME = /\.(pdf|docx?|txt|md|csv|xlsx?|html?|pptx?)$/i;
+
+/** The link customers see for an article's source: a web address only, never an uploaded file's name. */
+function sourceLink(src: string | null | undefined) {
+  const s = src?.trim() ?? "";
+  if (/^https?:\/\/\S+$/i.test(s)) return s;
+  if (!s || /\s/.test(s) || (!s.includes("/") && FILE_NAME.test(s))) return null;
+  return /^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(s.split("/")[0]) ? `https://${s}` : null;
+}
+
+/** "🔗 Source: …  ✅ Last verified: …" under an answer; the source line only when it is a web page. */
+function citation(a: { source_url?: string | null; verified_at?: string | null }) {
+  const link = sourceLink(a.source_url);
+  const verified = a.verified_at ? new Date(a.verified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+  const lines = [link && `🔗 Source: ${link}`, verified && `✅ Last verified: ${verified}`].filter(Boolean);
+  return lines.length ? `\n\n${lines.join("\n")}` : "";
+}
+
 /** Sends one article exactly as written, with its source and last-verified date when it has them. */
 async function sendArticle(ctx: F.FlowCtx, id: string) {
   const { data: a } = await supabaseAdmin().from("kb_articles").select("mvno_id, title, body, source_url, verified_at").eq("id", id).maybeSingle();
   if (!a || a.mvno_id !== ctx.mvno.id) return F.showMenu(ctx);
   if (ctx.mvno.strict_sources && (!a.source_url || !a.verified_at)) return answerFromKb(ctx, id, ""); // unsourced: refuse, as for the AI
-  const verified = a.verified_at ? new Date(a.verified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
-  const footer = a.source_url ? `\n\n🔗 Source: ${a.source_url}${verified ? `\n✅ Last verified: ${verified}` : ""}` : "";
+  const footer = a.source_url ? citation(a) : "";
   return F.say(ctx, { type: "text", text: `*${a.title}*\n\n${a.body.trim()}${footer}`.slice(0, 4000), previewUrl: false });
 }
 
@@ -925,6 +942,5 @@ async function answerFromKb(ctx: F.FlowCtx, articleId: string, answer: string) {
       ],
     });
   }
-  const verified = new Date(a.verified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  return F.say(ctx, { type: "text", text: `${answer.trim()}\n\n🔗 Source: ${a.source_url}\n✅ Last verified: ${verified}`, previewUrl: false });
+  return F.say(ctx, { type: "text", text: `${answer.trim()}${citation(a)}`, previewUrl: false });
 }

@@ -21,6 +21,7 @@ const Articles = z.object({
       title: z.string(),
       body: z.string(),
       tags: z.array(z.string()),
+      source_url: z.string().optional(), // the web page the source names for this topic
     }),
   ),
 });
@@ -42,6 +43,7 @@ const DISTILL_RULES = `
 - Skip navigation, legal boilerplate, marketing fluff and anything not useful for customer support.
 - Write only customer-facing facts. Never mention the source (website, homepage, page, document, product list) and never add notes about doubts, inconsistencies or things "not confirmed". If two facts conflict, keep the more specific one; leave out anything uncertain.
 - 1–4 short lowercase tags per article.
+- source_url: the official web page the source gives for this article's topic (a full URL, or a domain with its path), copied exactly. Empty string if the source names none. Never invent or guess one.
 Return an empty list if nothing is useful.`;
 
 // ------------------------------------------------------------------ public entry
@@ -64,7 +66,8 @@ export async function ingestSource(sourceId: string, mvnoId: string, input: Sour
         body: a.body,
         tags: a.tags.map((t) => t.toLowerCase().slice(0, 30)).slice(0, 4),
         // Every article cites where it came from (sourced-answers tenants only use cited articles).
-        source_url: input.kind === "url" ? input.url : input.name,
+        // For a file that is the page it names; else the file name, which staff see but customers never do.
+        source_url: input.kind === "url" ? input.url : a.source_url?.trim() || input.name,
         verified_at: new Date().toISOString().slice(0, 10),
       })),
     );
@@ -200,8 +203,9 @@ async function distill(content: Anthropic.ContentBlockParam[], prompt: string): 
                   title: { type: "string" },
                   body: { type: "string" },
                   tags: { type: "array", items: { type: "string" } },
+                  source_url: { type: "string" },
                 },
-                required: ["title", "body", "tags"],
+                required: ["title", "body", "tags", "source_url"],
                 additionalProperties: false,
               },
             },
