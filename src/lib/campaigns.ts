@@ -4,7 +4,7 @@ import { getMvno, waCredentials } from "@/lib/inbox/service";
 import { metaSend } from "@/lib/whatsapp/meta";
 import { MEDIA_BUCKET } from "@/lib/whatsapp/media";
 import { SIMULATOR_TAG } from "@/lib/inbox/simulation";
-import { parseTemplate, type ParsedTemplate, type VarValue } from "@/lib/campaign-templates";
+import { parseTemplate, renderPreview, type ParsedTemplate, type VarValue } from "@/lib/campaign-templates";
 import { zonedToUtc } from "@/lib/hours";
 import { MAX_AUDIENCE } from "@/lib/campaign-audience";
 import type { Mvno } from "@/lib/types";
@@ -185,6 +185,25 @@ export async function processCampaign(campaignId: string, budgetMs = 45_000) {
       c.kind === "text"
         ? { messaging_product: "whatsapp", recipient_type: "individual", to: r.wa_id, type: "text", text: { body: c.body as string, preview_url: false } }
         : templatePayload(t!, c.variables, r, headerLink);
+    // A copy in the person's latest chat, so staff see what was sent. Best effort: the message already went out.
+    const copyToChat = async (r: { wa_id: string; name: string | null; contact_id: string | null }, waMessageId: string) => {
+      if (!r.contact_id) return;
+      const { data: conv } = await db.from("conversations").select("id").eq("contact_id", r.contact_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (!conv) return;
+      const p = c.kind === "text" ? null : renderPreview(t!, c.variables ?? {}, r.name ?? "");
+      await db.from("messages").insert({
+        conversation_id: conv.id,
+        mvno_id: c.mvno_id,
+        direction: "out",
+        sender_type: "system",
+        sender_id: c.created_by,
+        type: "text",
+        body: p ? [p.header, p.body, p.footer].filter(Boolean).join("\n\n") : c.body,
+        payload: { campaign: { id: c.id, name: c.name } },
+        wa_message_id: waMessageId,
+        status: "sent",
+      });
+    };
     // Telling people their ID arrived takes them off the "not told yet" list.
     const idNews = c.audience?.mode === "id_untold" || c.audience?.mode === "id_arrived";
     // A message that closes their request (e.g. "your name isn't in the system") takes them off the list.
@@ -205,6 +224,7 @@ export async function processCampaign(campaignId: string, budgetMs = 45_000) {
             try {
               const id = await metaSend(creds.phoneNumberId, creds.token, payload(r));
               await db.from("campaign_recipients").update({ status: "sent", wa_message_id: id, updated_at: new Date().toISOString() }).eq("id", r.id);
+              await copyToChat(r, id).catch(() => undefined);
               if (idNews && r.contact_id) {
                 await db
                   .from("id_watch")

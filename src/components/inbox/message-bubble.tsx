@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, ImageOff, List, MapPin, StickyNote } from "lucide-react";
+import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, ImageOff, List, MapPin, Megaphone, StickyNote } from "lucide-react";
 import type { Message } from "@/lib/types";
 import type { OutboundMessage } from "@/lib/whatsapp/types";
 import { cx } from "@/components/ui";
@@ -49,6 +49,11 @@ export function MessageBubble({ m, authorName }: { m: Message; authorName?: stri
             {m.sender_type === "bot" ? (
               <>
                 <Bot className="size-3" /> Bot
+              </>
+            ) : m.payload?.campaign ? (
+              <>
+                <Megaphone className="size-3" /> Campaign · {(m.payload.campaign as { name?: string }).name}
+                {authorName ? ` · ${authorName}` : ""}
               </>
             ) : (
               (authorName ?? "Agent")
