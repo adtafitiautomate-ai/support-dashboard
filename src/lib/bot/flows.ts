@@ -783,7 +783,8 @@ async function showGeneralMenu(ctx: FlowCtx, intro?: string) {
     header: ctx.mvno.name.slice(0, 60),
     body: intro ?? "How can we help? Pick an option below, or just type your question.",
     button: "Menu",
-    footer: "Reply 'menu' anytime",
+    // Non-telecom tenants only: the telecom menu above must never name the platform behind it.
+    footer: "Reply 'menu' anytime · Powered by Hamilton Telecom",
     sections: [{ title: "How can we help?", rows: menuOf(ctx.mvno).map((i) => ({ id: `gm:${i.id}`, title: i.title.slice(0, 24), description: i.description?.slice(0, 72) })) }],
   });
 }
