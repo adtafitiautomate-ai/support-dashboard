@@ -783,9 +783,30 @@ async function showGeneralMenu(ctx: FlowCtx, intro?: string) {
     header: ctx.mvno.name.slice(0, 60),
     body: intro ?? "How can we help? Pick an option below, or just type your question.",
     button: "Menu",
-    // Non-telecom tenants only: the telecom menu above must never name the platform behind it.
-    footer: "Reply 'menu' anytime · Powered by Hamilton Telecom",
-    sections: [{ title: "How can we help?", rows: menuOf(ctx.mvno).map((i) => ({ id: `gm:${i.id}`, title: i.title.slice(0, 24), description: i.description?.slice(0, 72) })) }],
+    footer: "Reply 'menu' anytime",
+    sections: [
+      {
+        title: "How can we help?",
+        rows: [
+          // WhatsApp allows 10 rows: up to 9 menu items, then the credit line at the bottom of the sheet.
+          ...menuOf(ctx.mvno)
+            .slice(0, 9)
+            .map((i) => ({ id: `gm:${i.id}`, title: i.title.slice(0, 24), description: i.description?.slice(0, 72) })),
+          // Non-telecom tenants only: the telecom menu above must never name the platform behind it.
+          { id: `gm:${ABOUT_ROW}`, title: "About this service", description: "Powered by Hamilton Telecom" },
+        ],
+      },
+    ],
+  });
+}
+
+export const ABOUT_ROW = "_about";
+
+export async function showAbout(ctx: FlowCtx) {
+  await say(ctx, {
+    type: "buttons",
+    body: `This WhatsApp service of the ${ctx.mvno.name} is powered by Hamilton Telecom.`,
+    buttons: [{ id: "menu:main", title: "Main menu" }],
   });
 }
 

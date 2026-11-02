@@ -220,6 +220,7 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
         return findNearest(ctx, a === "store" || a === "agent" ? a : undefined);
       case "gm": {
         // General tenant menu. "answer" items fall through to the AI with the row title as the question.
+        if (a === F.ABOUT_ROW) return F.showAbout(ctx);
         const item = F.generalMenuItem(ctx.mvno, a);
         if (!item) return F.showMenu(ctx);
         if (item.action === "answer") return topicMenu(ctx, item.title, item.description);
