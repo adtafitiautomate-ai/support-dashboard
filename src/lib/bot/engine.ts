@@ -261,9 +261,15 @@ async function runBot(ctx: F.FlowCtx, msg: InboundMessage) {
   }
   if (state.awaiting === "id_name" && text && !isEscape(text)) {
     // A question instead of a name ("where do I collect it?") goes to the AI.
-    if (!/[?]/.test(text) && text.split(/\s+/).length <= 6 && !/\b(how|where|when|what|why|can|do|is|my|i)\b/i.test(text)) return checkNationalId(ctx, text.slice(0, 120));
+    const name = idNameIn(text);
+    if (name) return checkNationalId(ctx, name);
     await updateConversation(ctx.conv.id, { bot_state: {} });
     ctx.conv = { ...ctx.conv, bot_state: {} };
+  }
+  // Right after an ID result, another name ("Acham Mercy", "please check for Acham Mercy") is checked too.
+  if (state.flow === "id" && !state.awaiting && text && !isEscape(text)) {
+    const name = idNameIn(text);
+    if (name && name.split(/\s+/).length >= 2) return checkNationalId(ctx, name);
   }
   if (state.awaiting === "lost_number" && text && !isEscape(text)) {
     const msisdn = F.normalizeMsisdn(text);
@@ -792,6 +798,19 @@ async function typedName(ctx: F.FlowCtx, raw: string) {
   return words.every((w) => typed.has(w)) ? name : null;
 }
 
+/** The name in a reply like "Acham Mercy" or "please check for Acham Mercy"; null for questions and chit-chat. */
+function idNameIn(text: string) {
+  const t = text
+    .trim()
+    .replace(/^(please|pls|plz)[\s,]+/i, "")
+    .replace(/^(can you |could you )?(check|search|look ?up|find|try)( again)?( for| if| the names?( of)?| names?)?[\s:,]+/i, "")
+    .replace(/[.!]+$/, "")
+    .trim();
+  if (!t || /[?\d@]/.test(t) || t.split(/\s+/).length > 6) return null;
+  if (/\b(how|where|when|what|why|can|do|is|my|i|thanks?|thank you|ok|okay|yes|no|hello|hi|bye|collect|ready|arrived?|card|id|good|morning|afternoon|evening|night|menu|help|agent|officer|appointment|passport|visa|to|the|a|for|and|me|you|we|it|this|that|want|need|please|still|not|found|again|sorry|sir|madam)\b/i.test(t)) return null;
+  return t.slice(0, 120);
+}
+
 async function askIdName(ctx: F.FlowCtx, attempt = 0) {
   await updateConversation(ctx.conv.id, { bot_state: { flow: "id", awaiting: "id_name", data: { attempt } } });
   await F.say(ctx, { type: "text", text: "I can check if your National ID card has arrived. Please send your *full name exactly as on your application form* (all your names)." });
@@ -823,7 +842,7 @@ async function checkNationalId(ctx: F.FlowCtx, name: string) {
 
   switch (r.kind) {
     case "found":
-      await updateConversation(ctx.conv.id, { bot_state: {} });
+      await updateConversation(ctx.conv.id, { bot_state: { flow: "id" } }); // a follow-up name is checked too
       return F.say(ctx, {
         type: "buttons",
         body: `✅ Good news! A National ID card for *${r.fullName}* has arrived${r.received ? ` (in the cards received as of ${day(r.received)})` : ""}.\n\nAsk me *how to collect it* if you need the steps.\n\n📄 Source: ${r.batch.label}${r.batch.source ? ` (${r.batch.source})` : ""}`,

@@ -84,7 +84,7 @@ ${
 - Emergencies (someone in danger, arrested, injured, in hospital, lost or stolen documents while travelling, any urgent safety issue): call emergency_help immediately.
 - Office address or opening hours: call show_offices.
 - "What services/documents can you help with?", or a topic with no specific question (e.g. just "Official documents"): call show_topic_options with that topic. Never answer a list of services in plain text.
-- "Has my National ID arrived?" or any ID status question: call check_national_id (with their full name if they gave it). Never say yourself whether a card has arrived, never guess, and never mention anyone else's name. How to collect a card is a normal knowledge-base question.
+- "Has my National ID arrived?", "check for <name>", or any ID status question: call check_national_id with the full name they typed, whether it is theirs or a family member's (anyone may check a name). Never refuse a check, never say yourself whether a card has arrived, never guess, and never mention any name other than the one asked about. How to collect a card is a normal knowledge-base question.
 - Wanting a person, complaints, or anything you can't answer from the knowledge base: call handoff_to_agent.
 - Never ask for passwords or PINs. Don't ask for full ID or passport numbers unless an article says they're needed.
 - Ending a chat: only when the customer says they're done (thanks, that's all, bye), call resolve_conversation and write NO goodbye yourself: the system sends the closing message ("${closingOf(mvno)}"). Never close while the customer is waiting on us; end with the next step instead.
@@ -418,7 +418,7 @@ const GENERAL_EXTRA_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "check_national_id",
-    description: "Check whether the customer's National ID card has arrived, in the uploaded register of received cards. Only the customer's own name is checked; the system replies.",
+    description: "Check whether a National ID card has arrived for a name the customer gives (theirs or a family member's), in the uploaded register of received cards. The system replies.",
     input_schema: {
       type: "object",
       properties: { full_name: { type: "string", description: "The full name the customer TYPED in this chat for this check, else empty string (the system then asks for it). Never use their WhatsApp profile name." } },
