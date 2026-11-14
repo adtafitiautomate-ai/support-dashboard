@@ -146,4 +146,4 @@ export async function sendMail(to: string[], subject: string, body: { html: stri
   }
 }
 
-export const appUrl = () => process.env.APP_URL ?? "https://support-dashboard-iota.vercel.app";
+export const appUrl = () => process.env.APP_URL ?? "https://support-dashboard-vert.vercel.app";
